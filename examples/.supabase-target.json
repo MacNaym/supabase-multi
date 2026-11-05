@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "project": "example",
+  "default_target": "example-prod",
+  "production_target": "example-prod"
+}

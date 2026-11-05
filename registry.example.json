@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "accounts": {
+    "company-main": {
+      "label": "Company main account",
+      "email": "admin@example.com",
+      "login_method": "github",
+      "browser": "brave",
+      "discovery_token_env": "SUPABASE_DISCOVERY_COMPANY",
+      "cli_profile_managed": false
+    }
+  },
+  "projects": {
+    "example-prod": {
+      "label": "Example production",
+      "account": "company-main",
+      "project_ref": "abcdefghijklmnopqrst",
+      "environment": "production",
+      "token_env": "SUPABASE_PAT_EXAMPLE_PROD",
+      "mcp": "sb_example-prod",
+      "read_only": false,
+      "enabled": true
+    }
+  }
+}

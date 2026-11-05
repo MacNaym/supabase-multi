@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "supabase-multi": {
+      "command": "python",
+      "args": [
+        "G:\\projects\\_agents_skills\\supabase-multi\\mcp\\server.py"
+      ]
+    }
+  }
+}

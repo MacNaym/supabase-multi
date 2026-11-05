@@ -1,0 +1,17 @@
+﻿title = "Supabase Multi gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Documentation placeholders and environment-variable names"
+regexes = [
+  '''SUPABASE_PAT_[A-Z0-9_]+''',
+  '''SUPABASE_DISCOVERY_[A-Z0-9_]+'''
+]
+
+[[allowlists]]
+description = "Ignore local virtual environments"
+paths = ['''(^|/)mcp/\.venv/.*''', '''(^|/)\.venv/.*''']
+
+

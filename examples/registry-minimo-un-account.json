@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "defaults": {
+    "read_only_production": true,
+    "features": ["database", "debugging", "development", "functions", "docs"],
+    "mcp_prefix": "sb_"
+  },
+  "accounts": {
+    "mio-account": {
+      "label": "Il mio account Supabase",
+      "token_env": "SUPABASE_PAT_MIO_ACCOUNT",
+      "enabled": true
+    }
+  },
+  "projects": {
+    "mio-progetto-prod": {
+      "label": "Mio Progetto Production",
+      "account": "mio-account",
+      "project_ref": "abcdefghijklmnopqrst",
+      "environment": "production",
+      "read_only": true,
+      "features": ["database", "debugging", "development", "functions", "docs"],
+      "token_env": null,
+      "enabled": true
+    }
+  }
+}

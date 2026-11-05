@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "supabase-multi": {
+      "command": "C:\\path\\to\\supabase-multi\\mcp\\.venv\\Scripts\\python.exe",
+      "args": [
+        "C:\\path\\to\\supabase-multi\\mcp\\server.py"
+      ]
+    }
+  }
+}

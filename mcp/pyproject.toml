@@ -1,0 +1,11 @@
+[project]
+name = "supabase-multi-mcp"
+version = "0.1.0"
+description = "MCP server for Supabase Multi — a local Supabase control plane for humans and AI agents managing multiple accounts and projects."
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=2,<3"
+]
+
+[project.scripts]
+supabase-multi-mcp = "server:main"

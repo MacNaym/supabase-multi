@@ -1,0 +1,245 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Supabase Multi</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="app-shell">
+<header><div><div class="eyebrow">LOCAL CONTROL PANEL · V3.8.0 MCP PREVIEW</div><h1>Supabase Multi</h1><p><span data-i18n="header_subtitle">Separate accounts and projects · per-project PAT · CLI fallback · ready for end-to-end tests.</span></p></div><button id="refreshBtn" class="secondary" data-i18n="refresh">>Refresh</button></header>
+<section class="statusbar"><span id="rootPath" data-i18n="loading">>Loading...</span><span class="pill">127.0.0.1 only</span></section>
+
+<div class="workspace">
+  <aside class="sidebar">
+    <div class="sidebar-brand">Supabase Multi</div>
+    <button class="nav-btn active" data-view="dashboard"><span>⌂</span><b data-i18n="nav_dashboard">Dashboard</b></button>
+    <button class="nav-btn" data-view="account"><span>1</span><b data-i18n="nav_account">Connect account</b></button>
+    <button class="nav-btn" data-view="project"><span>2</span><b data-i18n="nav_project">Connect database</b></button>
+    <button class="nav-btn" data-view="auth"><span>3</span><b data-i18n="nav_auth">Authentication</b></button>
+    <button class="nav-btn" data-view="scan"><span>4</span><b data-i18n="nav_scan">Scan account</b></button>
+    <button class="nav-btn" data-view="status"><span>5</span><b data-i18n="nav_status">Status</b></button>
+    <button class="nav-btn" data-view="guide"><span>6</span><b data-i18n="nav_guide">Guide</b></button>
+    <div class="sidebar-spacer"></div>
+    <label class="language-picker">
+      <span data-i18n="language">Language</span>
+      <select id="languageSelect">
+        <option value="en">English</option>
+        <option value="it">Italiano</option>
+      </select>
+    </label>
+  </aside>
+
+  <section class="content-area">
+    <div id="notice" class="notice hidden"><span id="noticeText"></span><button id="noticeClose" class="notice-close" aria-label="Close">×</button></div>
+
+    
+<section class="view-panel active" data-view-panel="dashboard">
+  <div class="panel card dashboard-panel">
+    <div class="section-head">
+      <div>
+        <div class="card-title"><h2 data-i18n="dashboard_title">Dashboard</h2></div>
+        <p class="muted"><span data-i18n="dashboard_note">Operational overview of your Supabase accounts and databases.</span> <span data-i18n="last_check">Last check:</span> <span id="dashboardCheckedAt">—</span></p>
+      </div>
+      <button id="dashboardRefreshBtn" class="secondary" data-i18n="refresh">Refresh</button>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card"><span data-i18n="db_total">Databases</span><strong id="kpiDbTotal">0</strong></div>
+      <div class="kpi-card good"><span data-i18n="db_active">Active</span><strong id="kpiDbActive">0</strong></div>
+      <div class="kpi-card paused"><span data-i18n="db_paused">Paused</span><strong id="kpiDbPaused">0</strong></div>
+      <div class="kpi-card bad"><span data-i18n="db_attention">Need attention</span><strong id="kpiDbAttention">0</strong></div>
+      <div class="kpi-card"><span data-i18n="accounts_total">Accounts</span><strong id="kpiAccounts">0</strong></div>
+      <div class="kpi-card"><span data-i18n="cli_connected">CLI connected</span><strong id="kpiCli">0</strong></div>
+      <div class="kpi-card"><span data-i18n="project_pats">Project PATs</span><strong id="kpiProjectPat">0</strong></div>
+      <div class="kpi-card"><span data-i18n="orphan_secrets_count">Orphaned secrets</span><strong id="kpiOrphans">0</strong></div>
+    </div>
+
+    <section class="dashboard-section">
+      <div class="section-head">
+        <div>
+          <h3 data-i18n="needs_attention">Needs attention</h3>
+          <p class="muted" data-i18n="needs_attention_note">Only items that may require action are shown here.</p>
+        </div>
+      </div>
+      <div id="attentionEmpty" class="empty" data-i18n="all_good">Nothing needs attention.</div>
+      <div id="attentionWrap" class="table-wrap hidden"><table id="attentionTable"></table></div>
+    </section>
+
+    <section class="dashboard-section">
+      <div class="section-head"><div><h3 data-i18n="database_overview">Database overview</h3></div></div>
+      <div class="table-wrap"><table id="dashboardProjectsTable"></table></div>
+    </section>
+  </div>
+</section>
+
+<section class="view-panel" data-view-panel="account">
+      <div class="panel card"><div class="card-title"><h2 data-i18n="account_title">Account</h2><button type="button" class="help-btn" data-help="account">?</button></div><p class="muted" data-i18n="account_identity_note">Required identity: Supabase email + login method. Existing accounts can remain incomplete until you fill them in.</p>
+<form id="accountForm">
+<input type="hidden" name="original_name">
+<div class="account-loader">
+<label><span data-i18n="existing_account">Existing account</span>
+<select id="accountLoadSelect"><option value="" data-i18n="select_account">— Select account —</option></select>
+</label>
+<button type="button" id="loadAccountBtn" class="secondary" data-i18n="load_account">>Load account</button>
+<span id="accountMode" class="muted">Mode: new account</span>
+</div>
+<label><span data-i18n="account_alias">Account alias</span><input name="name" required placeholder="company-main"></label>
+<label><span data-i18n="account_label">Account name / label</span><input name="label" placeholder="es. Company main account"></label>
+<label><span data-i18n="supabase_email">Supabase email</span><input name="email" type="email" placeholder="name@example.com"></label>
+<label><span data-i18n="login_method">Login method</span><select name="login_method">
+<option value="unknown" data-i18n="not_specified">Not specified</option>
+<option value="classic">Email / password</option>
+<option value="github">GitHub</option>
+<option value="google">Google / Gmail</option>
+</select></label>
+<label><span data-i18n="account_browser">Account browser</span><select name="browser">
+<option value="default" data-i18n="system_default">System default</option>
+<option value="brave">Brave</option>
+<option value="edge">Microsoft Edge</option>
+<option value="chrome">Google Chrome</option>
+</select></label>
+<label><span data-i18n="discovery_env">Account-wide Discovery PAT env</span> <span class="optional" data-i18n="optional_discovery">(optional · discovery only)</span><input name="discovery_token_env" placeholder="SUPABASE_DISCOVERY_COMPANY"></label>
+<label><span data-i18n="discovery_pat">Account-wide Discovery PAT</span> <span class="optional" data-i18n="optional_replace">(optional · saves/replaces token)</span><input name="discovery_token_value" type="password" autocomplete="new-password" placeholder="sbp_..."></label><p class="muted small-note" data-i18n="discovery_pat_note">Use an account-wide/classic PAT, or an equivalent token with visibility across projects. Do not use a PAT scoped to a single project here.</p>
+<label class="check"><input type="checkbox" name="enabled" checked> <span data-i18n="enabled">Enabled</span></label>
+<div class="row"><button type="submit" data-i18n="save_account">>Save account</button><button type="button" id="cancelAccountEdit" class="secondary hidden" data-i18n="cancel">>Cancel</button></div>
+</form></div>
+    </section>
+
+    <section class="view-panel" data-view-panel="project">
+      <div class="panel card"><div class="card-title"><h2 data-i18n="project_title">Project / manual database</h2><div class="row"><button type="button" id="patGuideBtn" class="secondary" data-i18n="pat_guide">>PAT guide</button><button type="button" class="help-btn" data-help="project">?</button></div></div><form id="projectForm" class="project-grid">
+<input type="hidden" name="original_name">
+<div class="project-mode-row"><span id="projectMode" class="muted">Mode: new project</span><button type="button" id="cancelProjectEdit" class="secondary hidden" data-i18n="cancel_edit">>Cancel edit</button></div>
+<label><span>Target</span><input name="name" required placeholder="example-prod"></label><label><span data-i18n="label">Label</span><input name="label"></label>
+<label><span>Account</span><select name="account" id="projectAccount"></select></label><label><span>Project ref</span><input name="project_ref" required></label>
+<label><span data-i18n="environment">Environment</span><select name="environment"><option value="production" data-i18n="env_production">Production</option><option value="development" data-i18n="env_development">Development</option><option value="staging" data-i18n="env_staging">Staging</option></select></label>
+<label><span data-i18n="scoped_pat_env">Operational scoped PAT env</span><input name="token_env" required placeholder="SUPABASE_PAT_EXAMPLE"></label>
+<label><span data-i18n="scoped_pat">Operational project-scoped PAT</span> <span class="optional" data-i18n="scoped_pat_note">(recommended · paste here; not stored in registry)</span><input name="token_value" type="password" autocomplete="new-password" placeholder="sbp_..."></label>
+<label class="check"><input type="checkbox" name="read_only"> Read-only MCP</label><label class="check"><input type="checkbox" name="enabled" checked> <span data-i18n="enabled">Enabled</span></label><button type="submit" data-i18n="save_project_pat">>Save project + PAT</button></form></div>
+    </section>
+
+    <section class="view-panel" data-view-panel="auth">
+      <div class="panel card"><div class="card-title"><h2 data-i18n="auth_title">Authentication</h2><button type="button" class="help-btn" data-help="auth">?</button></div>
+<label><span>Account</span><select id="authAccount"></select></label>
+<div class="auth-tabs"><button id="tabSimple" class="active">Semplice (CLI)</button><button id="tabManual" class="secondary">Manuale PAT</button></div>
+<div id="simpleAuth" class="auth-panel">
+<p class="muted" data-i18n="cli_auth_note">Starts the official Supabase CLI login in a separate profile. GitHub, Google, and email authentication remain handled by Supabase.</p>
+<div class="provider-note">
+  <strong data-i18n="important">Important:</strong> <span data-i18n="profile_note">each account alias uses a separate Supabase CLI profile, so multiple accounts can stay connected at the same time.</span>
+</div>
+<div class="row"><button id="connectBtn" data-i18n="connect_supabase">>Connect Supabase</button><button id="disconnectBtn" class="secondary danger" data-i18n="disconnect">>Disconnect</button></div>
+<div id="oauthStatus" class="auth-status">Status: —</div>
+</div>
+<div id="manualAuth" class="auth-panel hidden">
+<form id="tokenForm"><input type="hidden" name="kind" id="tokenKind" value="discovery"><label><span>Discovery PAT</span><input name="token" type="password" autocomplete="off" required placeholder="sbp_..."></label>
+<div class="row"><button type="submit" data-i18n="save_replace">>Save / replace</button><button type="button" id="clearTokenBtn" class="secondary danger" data-i18n="remove_token">>Remove token</button></div></form>
+</div></div>
+    </section>
+
+    <section class="view-panel" data-view-panel="scan">
+      <div class="panel card"><div class="section-head"><div><div class="card-title"><h2 data-i18n="scan_title">Scan Supabase account</h2><button type="button" class="help-btn" data-help="scan">?</button></div><p class="muted" data-i18n="scan_note">Use simple CLI login or a manual Discovery PAT.</p></div><div class="row"><select id="discoverAccount"></select><select id="discoverMode"><option value="oauth" data-i18n="simple_cli_login">Simple login (CLI)</option><option value="pat">Discovery PAT</option></select><button id="discoverBtn" data-i18n="scan">>ðŸ” Scan</button></div></div>
+<div id="discoveryEmpty" class="empty">No scan performed yet.</div><div id="discoveryResults" class="hidden"><div class="table-wrap"><table id="discoveryTable"></table></div><div class="row importbar"><button id="importSelectedBtn" data-i18n="import_selected">>Import selected</button><span class="muted">Operational PATs remain separate.</span></div></div></div>
+    </section>
+
+    <section class="view-panel" data-view-panel="status">
+      <div class="panel card"><div class="section-head"><div><div class="card-title"><h2 data-i18n="status_title">Current status</h2><button type="button" class="help-btn" data-help="status">?</button></div><p class="muted"><span data-i18n="status_note">Tokens are never displayed. Supabase status is checked at startup and on every refresh. Last check:</span> <span id="platformCheckedAt">—</span></p></div><div class="row"><button id="syncBtn">MCP Sync</button><button id="doctorBtn" class="secondary">Doctor</button><button id="allBtn">Sync + Doctor</button></div></div>
+<h3>Account</h3><div class="table-wrap"><table id="accountsTable"></table></div><h3>Progetti</h3><div class="table-wrap"><table id="projectsTable"></table></div>
+
+<section class="orphan-secrets-section">
+  <div class="section-head">
+    <div>
+      <h3 data-i18n="orphan_title">Orphaned secrets</h3>
+      <p class="muted" data-i18n="orphan_note">Supabase PAT environment variables no longer referenced by any account or project. Secret values are never shown.</p>
+    </div>
+    <button id="cleanAllOrphansBtn" class="secondary danger hidden" data-i18n="clean_all_orphans">Clean all</button>
+  </div>
+  <div id="orphanSecretsEmpty" class="empty" data-i18n="no_orphans">No orphaned Supabase secret variables found.</div>
+  <div id="orphanSecretsWrap" class="table-wrap hidden">
+    <table id="orphanSecretsTable"></table>
+  </div>
+</section>
+
+<details class="diagnostics-drawer">
+  <summary data-i18n="diagnostics_title">Diagnostics / Logs</summary>
+  <div class="diagnostics-body">
+    <div class="section-head">
+      <span class="muted" data-i18n="diagnostics_note">Technical output for troubleshooting.</span>
+      <button id="clearOutputBtn" class="secondary" data-i18n="clear">>Clear</button>
+    </div>
+    <pre id="output">Ready.</pre>
+  </div>
+</details>
+</div>
+    </section>
+
+    
+<section class="view-panel" data-view-panel="guide">
+  <div class="panel card">
+    <div class="card-title"><h2 data-i18n="guide_title">Complete guide</h2></div>
+    <div class="guide-body">
+      <div class="guide-callout">
+        <h3 data-i18n="discovery_model_title">Discovery PAT model</h3>
+        <pre>ACCOUNT
+└─ Discovery PAT account-wide
+   └─ Projects (account-wide): Read
+
+PROJECT
+└─ Operational scoped PAT
+   ├─ Project Settings: Read
+   ├─ Database: Read-write
+   ├─ Migrations: Read-write
+   ├─ Logs: Read
+   ├─ Advisors: Read
+   ├─ API Keys: Read
+   └─ Edge Functions: Read-write</pre>
+        <p data-i18n="discovery_model_note">Use the account-wide PAT only to discover projects. Use a separate scoped PAT for each project's operational access.</p>
+      </div>
+      <div data-i18n-html="guide_full"></div>
+    </div>
+  </div>
+</section>
+
+  </section>
+</div>
+
+<footer>v3.8.0 MCP Preview — AI control plane.</footer>
+</main>
+<div id="loginInfoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loginInfoTitle">
+  <div class="modal-card login-card">
+    <div class="modal-head">
+      <h2 id="loginInfoTitle" data-i18n="open_supabase_project">Open Supabase project</h2>
+      <button type="button" id="loginInfoClose" class="modal-close" aria-label="Chiudi">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="login-summary">
+        <div><span class="muted" data-i18n="project">Project</span><strong id="loginProjectName">—</strong></div>
+        <div><span class="muted">Account</span><strong id="loginAccountName">—</strong></div>
+        <div><span class="muted">Email</span><strong id="loginEmail">—</strong></div>
+        <div><span class="muted" data-i18n="login_method">Login method</span><strong id="loginMethod">—</strong></div>
+        <div><span class="muted">Browser</span><strong id="loginBrowser">—</strong></div>
+      </div>
+      <p id="loginWarning" class="muted"></p>
+    </div>
+    <div class="modal-actions">
+      <button type="button" id="loginInfoCancel" class="secondary" data-i18n="cancel">>Cancel</button>
+      <button type="button" id="loginInfoOpen" data-i18n="open_dashboard">>Open Dashboard</button>
+    </div>
+  </div>
+</div>
+<div id="messageModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="messageModalTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="messageModalTitle">Messaggio</h2>
+      <button type="button" id="messageModalClose" class="modal-close" aria-label="Chiudi">×</button>
+    </div>
+    <div id="messageModalBody" class="modal-body"></div>
+    <div class="modal-actions"><button type="button" id="messageModalOk">OK</button></div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
+
+
+

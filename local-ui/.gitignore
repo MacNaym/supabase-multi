@@ -1,0 +1,9 @@
+browser-profiles/
+oauth-sessions.dat
+*.bak
+*.backup
+.env
+.env.*
+__pycache__/
+*.pyc
+registry.json
