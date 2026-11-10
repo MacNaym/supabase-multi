@@ -23,6 +23,14 @@ Never guess a target.
 
 If `resolve_project` returns `ambiguous`, the agent must ask the user which account/project to use.
 
+## SQL
+
+`query_sql(target, query)` always proxies to the official Supabase MCP with `read_only=true`.
+
+`execute_sql(target, query, confirm=true)` uses the write-capable official SQL path only when the Supabase Multi target is not configured read-only. The local HTTP endpoint independently requires `confirm=true`.
+
+The project PAT is read locally from its configured environment variable and is never returned to the calling agent.
+
 ## Destructive tools
 
 Destructive operations require `confirm=true`.
