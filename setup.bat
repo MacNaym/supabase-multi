@@ -1,4 +1,3 @@
-\
 @echo off
 setlocal
 cd /d "%~dp0"
@@ -6,8 +5,24 @@ cd /d "%~dp0"
 echo [Supabase Multi] Checking Python...
 python --version >nul 2>&1
 if errorlevel 1 (
-  echo ERROR: Python 3.11 or newer is required.
+  echo ERROR: Python 3.11 or newer is required and was not found on PATH.
   exit /b 1
+)
+python -c "import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)"
+if errorlevel 1 (
+  echo ERROR: Python 3.11 or newer is required.
+  python --version
+  exit /b 1
+)
+
+echo [Supabase Multi] Checking Supabase CLI...
+where supabase >nul 2>&1
+if errorlevel 1 (
+  echo WARNING: Supabase CLI was not found on PATH.
+  echo          The dashboard and PAT-based features can still run,
+  echo          but named CLI profile discovery/fallback will be unavailable.
+) else (
+  supabase --version
 )
 
 echo [Supabase Multi] Creating MCP virtual environment...
