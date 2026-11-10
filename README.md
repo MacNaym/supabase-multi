@@ -434,9 +434,11 @@ Current release target:
 
 - Windows 10/11;
 - Python 3.11+;
-- Supabase CLI;
+- Supabase CLI when using named CLI-profile discovery/fallback;
 - Brave, Microsoft Edge, or Google Chrome for isolated Dashboard profiles;
 - an MCP-compatible AI client if AI access is required.
+
+The dashboard, PAT-based flows and Supabase Multi MCP can start without the Supabase CLI. CLI-backed account discovery and fallback checks require it.
 
 The MCP Python SDK requires Python 3.11+.
 
@@ -457,9 +459,10 @@ To run the local control plane and its MCP server you need:
 
 - Windows 10/11;
 - Python 3.11+;
-- Supabase CLI;
 - Brave, Microsoft Edge, or Google Chrome for isolated Dashboard profiles;
 - the Python MCP SDK installed inside `mcp/.venv`.
+
+The Supabase CLI is additionally required for named CLI-profile login, CLI-backed project discovery and CLI fallback checks.
 
 These are enough for:
 
@@ -514,20 +517,20 @@ https://supabase.com/docs/guides/ai-tools/mcp
 
 # Installation
 
-## Recommended release installation
+## Recommended installation
 
-The release package is intended to provide a simple setup flow:
+Clone the repository and run the project setup:
 
-```text
-1. Download the release ZIP
-2. Extract it
-3. Run setup.bat
-4. Run start-supabase-multi.bat
-5. Configure your accounts and projects in the dashboard
-6. Connect the Supabase Multi MCP server to your AI client
+```powershell
+git clone https://github.com/MacNaym/supabase-multi.git
+cd supabase-multi
+.\setup.bat
+.\start-supabase-multi.bat
 ```
 
-`setup.bat` creates an isolated Python virtual environment for the MCP server and installs its dependencies.
+If you do not use Git, download the repository source ZIP from GitHub, extract it, then run `setup.bat` and `start-supabase-multi.bat`.
+
+`setup.bat` verifies Python 3.11+, reports Supabase CLI availability, creates an isolated Python virtual environment for the MCP server, installs its dependencies, and creates `registry.json` from the example when needed.
 
 The MCP dependencies are intentionally **not** installed into the system/global Python environment.
 
@@ -557,7 +560,7 @@ supabase-multi/
 Clone the repository:
 
 ```powershell
-git clone <REPOSITORY_URL>
+git clone https://github.com/MacNaym/supabase-multi.git
 cd supabase-multi
 ```
 
@@ -580,6 +583,20 @@ Install the MCP SDK:
 ```
 
 The official MCP Python SDK documents the `mcp[cli]` extra for development and MCP Inspector support.
+
+## Automated verification
+
+GitHub Actions now verifies the public installation surface on Windows. CI:
+
+- compiles the Python sources;
+- imports the MCP server;
+- runs regression tests for fast local-state reads and secret-field sanitization;
+- runs `setup.bat` from a clean checkout;
+- verifies the generated MCP virtual environment and local registry;
+- starts the control plane and probes `/api/state?local=1`;
+- runs Gitleaks against the repository history.
+
+See [docs/installation.md](docs/installation.md) for the step-by-step installation guide.
 
 ---
 
