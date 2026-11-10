@@ -38,7 +38,7 @@ Examples:
 - delete orphaned secret;
 - clean all orphaned secrets.
 
-Do not weaken confirmation requirements.
+Do not weaken confirmation requirements.\n\nFor SQL:\n- use `query_sql` for read-only queries;\n- never emulate writes through `query_sql`;\n- `execute_sql` requires explicit user approval and `confirm=true`;\n- refuse write-capable SQL when the resolved target is configured read-only;\n- never return or log the project PAT.
 
 ## Supabase MCP relationship
 
