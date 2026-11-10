@@ -97,7 +97,7 @@ def _api(path: str, payload: dict[str, Any] | None = None, timeout: int = 120) -
 
 
 def _state() -> dict[str, Any]:
-    return _api("/api/state")["data"]
+    return _api("/api/state?local=1")["data"]
 
 
 def _project_public(p: dict[str, Any]) -> dict[str, Any]:
