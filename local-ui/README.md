@@ -51,7 +51,7 @@ The application binds to `127.0.0.1`.
 
 ## Current status
 
-The project is in public-preview quality. Core account/project/PAT/CLI/MCP flows are functional, but a clean-machine installation test is still recommended before calling it stable.
+The project is an early public release. Core account/project/PAT/CLI/MCP flows are functional and the repository now includes automated unit/regression tests plus a Windows clean-install/startup smoke test. External user feedback is still welcome before declaring a stable 1.0 release.
 
 ## Run
 
