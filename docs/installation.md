@@ -51,7 +51,7 @@ Then start Supabase Multi:
 .\start-supabase-multi.bat
 ```
 
-The dashboard should open at:
+`start-supabase-multi.bat` is readiness-aware: it reuses an already-running control plane instead of starting a duplicate process, and it waits for the local fast-state endpoint before reporting success.\n\nThe dashboard should open at:
 
 ```text
 http://127.0.0.1:8765
