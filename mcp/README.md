@@ -59,7 +59,7 @@ Inspector is for development/troubleshooting only:
 
 ### Read / routing
 
-`get_dashboard`, `list_accounts`, `get_account`, `list_projects`, `get_project`, `resolve_project`, `verify_access`, `list_orphaned_secrets`
+`get_dashboard`, `list_accounts`, `get_account`, `list_projects`, `get_project`, `resolve_project`, `verify_access`, `query_sql`, `execute_sql`, `list_orphaned_secrets`
 
 ### Operations
 
@@ -85,4 +85,16 @@ The repository CI contains regression tests for:
 - MCP public-field sanitization;
 - destructive-action confirmation;
 - local-state operation without remote Supabase checks;
-- clean Windows installation/startup smoke testing.
+- clean Windows installation/startup smoke testing;\n- real MCP stdio initialize/tool-discovery startup;\n- SQL proxy read-only/write safety boundaries.
+
+## SQL through Supabase Multi
+
+`query_sql(target, query)` executes through the official project-scoped Supabase MCP in forced read-only mode.
+
+`execute_sql(target, query, confirm=true)` is write-capable, requires explicit confirmation, and refuses projects configured as read-only.
+
+Resolve the exact target before either tool. Raw PAT values remain local and are never returned by Supabase Multi MCP.
+
+## Codex
+
+See [../docs/codex.md](../docs/codex.md) for direct stdio, Secure MCP Tunnel, startup checks, and current Codex-plugin packaging guidance.
