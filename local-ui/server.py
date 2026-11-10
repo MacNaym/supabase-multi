@@ -851,9 +851,9 @@ def normalize_platform_status(raw):
         return "ERROR"
     return s or "UNKNOWN"
 
-def state_payload():
+def state_payload(check_remote=True):
     reg=migrate_legacy_cli_profile_flags(read_registry())
-    remote_by_ref, remote_errors = build_platform_status_cache(reg)
+    remote_by_ref, remote_errors = build_platform_status_cache(reg) if check_remote else ({}, {})
 
     accounts=[]
     for name,acc in reg.get("accounts",{}).items():
@@ -869,7 +869,7 @@ def state_payload():
             "browser_profile_ready":profile_dir.exists() and any(profile_dir.iterdir()),
             "discovery_token_env":de,
             "discovery_token_ok":env_exists(de) if de else False,
-            "oauth_connected":cli_profile_status(name, acc),
+            "oauth_connected":cli_profile_status(name, acc) if check_remote else False,
             "platform_check_ok": name not in remote_errors,
             "platform_check_error": remote_errors.get(name,""),
             "enabled":acc.get("enabled",True),
@@ -896,7 +896,7 @@ def state_payload():
             cli_chosen=candidates[0][1]
 
         # Primary check: the project's own PAT via Management API.
-        pat_info, pat_error_kind, pat_error_detail = project_status_from_pat(ref, te)
+        pat_info, pat_error_kind, pat_error_detail = project_status_from_pat(ref, te) if check_remote else (None, "NOT_CHECKED", "Remote verification not requested.")
 
         chosen = pat_info if pat_info is not None else cli_chosen
         status_source = "PAT" if pat_info is not None else ("CLI" if cli_chosen is not None else "NONE")
@@ -948,7 +948,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         p=urlparse(self.path)
         if p.path=="/api/state":
-            try:self.send_json({"ok":True,"data":state_payload()})
+            try:self.send_json({"ok":True,"data":state_payload(check_remote=urllib.parse.parse_qs(p.query).get("local", ["0"])[0] != "1")})
             except Exception as e:self.send_json({"ok":False,"error":str(e)},500)
             return
         if p.path=="/oauth/callback":
