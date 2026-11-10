@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -17,13 +17,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install MCP dependencies
+      - name: Install test and MCP dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          if (Test-Path "mcp/requirements.txt") {
-            python -m pip install -r mcp/requirements.txt
-          }
+          python -m pip install pytest
+          python -m pip install -r mcp/requirements.txt
 
       - name: Compile Python
         shell: pwsh
@@ -36,19 +35,48 @@ jobs:
       - name: Import MCP server
         shell: pwsh
         run: |
-          if (Test-Path "mcp/server.py") {
-            Push-Location mcp
-            python -c "import server; print('SUPABASE MULTI MCP IMPORT OK')"
-            Pop-Location
-          }
+          Push-Location mcp
+          python -c "import server; print('SUPABASE MULTI MCP IMPORT OK')"
+          Pop-Location
 
       - name: Run tests
         shell: pwsh
+        run: python -m pytest -q
+
+  clean-install:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run setup from a clean checkout
+        shell: cmd
+        run: setup.bat
+
+      - name: Verify generated local installation
+        shell: pwsh
         run: |
-          $tests = Get-ChildItem tests -Recurse -Filter "test_*.py" -ErrorAction SilentlyContinue
-          if ($tests) {
-            python -m pip install pytest
-            python -m pytest -q
-          } else {
-            Write-Host "No Python tests found; skipping pytest."
+          if (-not (Test-Path "mcp/.venv/Scripts/python.exe")) { throw "MCP virtual environment was not created." }
+          if (-not (Test-Path "registry.json")) { throw "registry.json was not created." }
+          & "mcp/.venv/Scripts/python.exe" -c "from mcp.server import MCPServer; print('MCP SDK OK')"
+
+      - name: Start control plane and probe fast local state
+        shell: pwsh
+        run: |
+          $proc = Start-Process python -ArgumentList "local-ui/server.py" -PassThru -WindowStyle Hidden
+          try {
+            $ok = $false
+            for ($i = 0; $i -lt 20; $i++) {
+              Start-Sleep -Milliseconds 500
+              try {
+                $response = Invoke-RestMethod "http://127.0.0.1:8765/api/state?local=1" -TimeoutSec 2
+                if ($response.ok) { $ok = $true; break }
+              } catch {}
+            }
+            if (-not $ok) { throw "Fast local state endpoint did not become ready." }
+          } finally {
+            if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
           }
