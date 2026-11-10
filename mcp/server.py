@@ -61,7 +61,7 @@ def _json_request(path: str, payload: dict[str, Any] | None = None, timeout: int
 
 def _is_up() -> bool:
     try:
-        _json_request("/api/state", timeout=2)
+        _json_request("/api/state?local=1", timeout=2)
         return True
     except Exception:
         return False
@@ -97,7 +97,7 @@ def _api(path: str, payload: dict[str, Any] | None = None, timeout: int = 120) -
 
 
 def _state() -> dict[str, Any]:
-    return _api("/api/state")["data"]
+    return _api("/api/state?local=1")["data"]
 
 
 def _project_public(p: dict[str, Any]) -> dict[str, Any]:
