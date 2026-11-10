@@ -63,20 +63,19 @@ jobs:
           if (-not (Test-Path "registry.json")) { throw "registry.json was not created." }
           & "mcp/.venv/Scripts/python.exe" -c "from mcp.server import MCPServer; print('MCP SDK OK')"
 
-      - name: Start control plane and probe fast local state
+      - name: Start through public launcher and probe fast local state
         shell: pwsh
         run: |
-          $proc = Start-Process python -ArgumentList "local-ui/server.py" -PassThru -WindowStyle Hidden
-          try {
-            $ok = $false
-            for ($i = 0; $i -lt 20; $i++) {
-              Start-Sleep -Milliseconds 500
-              try {
-                $response = Invoke-RestMethod "http://127.0.0.1:8765/api/state?local=1" -TimeoutSec 2
-                if ($response.ok) { $ok = $true; break }
-              } catch {}
-            }
-            if (-not $ok) { throw "Fast local state endpoint did not become ready." }
-          } finally {
-            if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
-          }
+          $env:SUPABASE_MULTI_NO_BROWSER = "1"
+          cmd /c start-supabase-multi.bat
+          if ($LASTEXITCODE -ne 0) { throw "start-supabase-multi.bat failed." }
+
+          $response = Invoke-RestMethod "http://127.0.0.1:8765/api/state?local=1" -TimeoutSec 2
+          if (-not $response.ok) { throw "Fast local state endpoint did not become ready." }
+
+          # The launcher must also be safe to run twice.
+          cmd /c start-supabase-multi.bat
+          if ($LASTEXITCODE -ne 0) { throw "Second launcher invocation failed." }
+
+          $listener = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($listener) { Stop-Process -Id $listener.OwningProcess -Force }
