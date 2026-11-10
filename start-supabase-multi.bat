@@ -13,7 +13,7 @@ echo [Supabase Multi] Checking local control plane...
 powershell -NoProfile -Command "try { $r=Invoke-RestMethod 'http://127.0.0.1:8765/api/state?local=1' -TimeoutSec 2; if($r.ok){exit 0} } catch {}; exit 1" >nul 2>&1
 if not errorlevel 1 (
   echo [Supabase Multi] Control plane is already running.
-  start "" "http://127.0.0.1:8765"
+  if /I not "%SUPABASE_MULTI_NO_BROWSER%"=="1" start "" "http://127.0.0.1:8765"
   exit /b 0
 )
 
@@ -28,6 +28,6 @@ if errorlevel 1 (
 )
 
 echo [Supabase Multi] Ready.
-start "" "http://127.0.0.1:8765"
+if /I not "%SUPABASE_MULTI_NO_BROWSER%"=="1" start "" "http://127.0.0.1:8765"
 
 endlocal
