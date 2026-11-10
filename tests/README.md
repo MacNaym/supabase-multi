@@ -8,7 +8,7 @@ Current coverage focuses on the contracts most likely to cause unsafe or confusi
 - local-state construction must not perform remote Supabase/CLI checks;
 - MCP public views must not expose raw secret fields;
 - destructive MCP helpers must require explicit confirmation;
-- a clean checkout must run `setup.bat`, create the MCP virtual environment and local registry, start the control plane, and answer the fast local-state endpoint.
+- a clean checkout must run `setup.bat`, create the MCP virtual environment and local registry, start the control plane, and answer the fast local-state endpoint;\n- the MCP server must launch over stdio, initialize and list its tools;\n- SQL reads must force the official downstream MCP into read-only mode, while writes must respect target read-only policy.
 
 Run locally from the repository root:
 
