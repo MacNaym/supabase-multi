@@ -208,6 +208,19 @@ def verify_access(target: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def query_sql(target: str, query: str) -> dict[str, Any]:
+    """Run SQL through the official Supabase MCP in forced read-only mode for one exact Supabase Multi target."""
+    return _api("/api/sql-query", {"project": target, "query": query})
+
+
+@mcp.tool()
+def execute_sql(target: str, query: str, confirm: bool = False) -> dict[str, Any]:
+    """Run SQL that may write to the database. Requires explicit confirm=true and refuses targets configured read-only."""
+    _require_confirmation(confirm, f"Executing write-capable SQL on '{target}'")
+    return _api("/api/sql-execute", {"project": target, "query": query, "confirm": True})
+
+
+@mcp.tool()
 def sync_mcp() -> dict[str, Any]:
     """Synchronize all configured Supabase project targets into the local MCP configuration."""
     return _api("/api/sync", {})

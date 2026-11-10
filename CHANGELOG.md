@@ -7,6 +7,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 ## [Unreleased]
 
 ### Added
+- Real MCP stdio startup/initialize/tool-discovery regression test.
+- Codex integration and Secure MCP Tunnel documentation.
+- `query_sql` read-only SQL proxy through the official Supabase MCP.
+- `execute_sql` confirmed write-capable SQL proxy for non-read-only targets.
 - Automated MCP and local-state regression tests.
 - Windows clean-install/startup smoke test in CI.
 - Verified installation guide and MCP virtual-environment instructions.
@@ -22,6 +26,8 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Setup now enforces Python 3.11+ instead of only checking that Python exists.
 
 ### Security
+- SQL reads force downstream `read_only=true`; SQL writes require explicit confirmation and are blocked for read-only targets.
+- Project PATs used for SQL remain local and are never returned through MCP.
 - Documented the no-raw-PAT MCP invariant.
 - Documented explicit confirmation for destructive MCP tools.
 - Documented ambiguous-resolution safety behavior.

@@ -40,6 +40,13 @@ Examples:
 
 Do not weaken confirmation requirements.
 
+For SQL:
+- use `query_sql` for read-only queries;
+- never emulate writes through `query_sql`;
+- `execute_sql` requires explicit user approval and `confirm=true`;
+- refuse write-capable SQL when the resolved target is configured read-only;
+- never return or log the project PAT.
+
 ## Supabase MCP relationship
 
 Supabase Multi MCP is the control plane and resolver.
@@ -55,6 +62,8 @@ agent
   -> official Supabase MCP for that target
   -> Supabase project
 ```
+
+Supabase Multi may proxy narrowly defined operations such as SQL to the official project-scoped MCP after resolution. This does not change the control-plane/executor boundary.
 
 ## Verification
 
