@@ -15,7 +15,7 @@ Supabase Multi MCP handles:
 - MCP target selection;
 - local administration.
 
-The official Supabase MCP server handles project-level operations such as SQL, schema inspection, migrations, logs, advisors, and Edge Functions.
+The official Supabase MCP server remains the project-level executor for schema inspection, migrations, logs, advisors, Edge Functions, and database work. Supabase Multi can now proxy SQL to its official `execute_sql` tool after resolving an exact target.
 
 ## Safety rule
 
@@ -41,4 +41,8 @@ From `mcp/`:
 .\.venv\Scripts\mcp.exe dev server.py
 ```
 
-The expected current server exposes 27 tools.
+The expected current server exposes 29 tools.
+
+## Codex and other harnesses
+
+The server speaks standard MCP over stdio. CI launches a real MCP client, initializes the server and lists tools, which verifies the transport independently of Codex. Client-specific integration is documented in [codex.md](codex.md).
