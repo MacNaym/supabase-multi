@@ -85,7 +85,9 @@ The repository CI contains regression tests for:
 - MCP public-field sanitization;
 - destructive-action confirmation;
 - local-state operation without remote Supabase checks;
-- clean Windows installation/startup smoke testing;\n- real MCP stdio initialize/tool-discovery startup;\n- SQL proxy read-only/write safety boundaries.
+- clean Windows installation/startup smoke testing;
+- real MCP stdio initialize/tool-discovery startup;
+- SQL proxy read-only/write safety boundaries.
 
 ## SQL through Supabase Multi
 
