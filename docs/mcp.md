@@ -31,6 +31,8 @@ If `resolve_project` returns `ambiguous`, the agent must ask the user which acco
 
 The project PAT is read locally from its configured environment variable and is never returned to the calling agent.
 
+The SQL proxy talks to the official Supabase MCP over HTTP and sends an explicit `User-Agent` for compatibility with the remote edge layer. A real write/read smoke test has verified the write-capable path end-to-end.
+
 ## Destructive tools
 
 Destructive operations require `confirm=true`.
@@ -65,3 +67,13 @@ ChatGPT custom MCP plugins may keep a frozen snapshot of tool metadata until an 
 The gateway schema is intentionally stable. New operations can be added to the live registry without changing the gateway tool schema, so clients that already know these two tools can discover and use future capabilities without requiring a new tool definition.
 
 Write-capable live operations still require `confirm=true`, and all existing target/read-only/PAT safety rules remain enforced downstream.
+
+## Local-first runtime and optional headless backend
+
+The normal Windows runtime remains local-first:
+
+- stdio MCP is the default transport;
+- the desktop control plane/dashboard remains on `127.0.0.1:8765`;
+- Supabase Multi can be started only when needed.
+
+The server also contains a portable headless backend and optional Streamable HTTP transport for advanced deployments. Transport selection and backend selection are intentionally separate so enabling Streamable HTTP does not silently change local routing behavior.
