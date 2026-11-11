@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -7,6 +8,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import types
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +29,27 @@ if str(ROOT) not in sys.path:
 from runtime_identity import runtime_payload, source_fingerprint
 
 CONTROL_PLANE = ROOT / "local-ui" / "server.py"
+RUNTIME_BRIDGE = MCP_DIR / "runtime_bridge.py"
 BASE_URL = os.environ.get("SUPABASE_MULTI_URL", "http://127.0.0.1:8765").rstrip("/")
+
+_runtime_bridge_module = None
+_runtime_bridge_stamp = None
+
+def _runtime_bridge():
+    global _runtime_bridge_module, _runtime_bridge_stamp
+    source = RUNTIME_BRIDGE.read_bytes()
+    stamp = hashlib.sha256(source).hexdigest()
+    if _runtime_bridge_module is not None and _runtime_bridge_stamp == stamp:
+        return _runtime_bridge_module
+
+    module_name = f"supabase_multi_runtime_bridge_{stamp[:16]}"
+    module = types.ModuleType(module_name)
+    module.__file__ = str(RUNTIME_BRIDGE)
+    code = compile(source, str(RUNTIME_BRIDGE), "exec")
+    exec(code, module.__dict__)
+    _runtime_bridge_module = module
+    _runtime_bridge_stamp = stamp
+    return module
 
 mcp = MCPServer(
     "supabase-multi",
@@ -157,13 +179,10 @@ def _ensure_control_plane() -> None:
 
 
 def _api(path: str, payload: dict[str, Any] | None = None, timeout: int = 120) -> dict[str, Any]:
-    if _use_headless_backend():
-        return headless_api(path, payload or {})
-    _ensure_control_plane()
-    return _json_request(path, payload, timeout=timeout)
+    return _runtime_bridge().api(path, payload, timeout=timeout)
 
 def _state() -> dict[str, Any]:
-    return _api("/api/state?local=1")["data"]
+    return _runtime_bridge().state()
 
 
 def _project_public(p: dict[str, Any]) -> dict[str, Any]:
@@ -209,58 +228,13 @@ LIVE_CAPABILITIES: dict[str, dict[str, Any]] = {
 
 
 def _invoke_live_capability(operation: str, arguments: dict[str, Any], confirm: bool = False) -> dict[str, Any]:
-    operation=(operation or "").strip()
-    if operation not in LIVE_CAPABILITIES:
-        raise RuntimeError(
-            f"Unknown live capability '{operation}'. Call get_capabilities first and use one of the advertised operations."
-        )
-    arguments = arguments or {}
-
-    if operation == "query_sql":
-        target=str(arguments.get("target") or "").strip()
-        query=str(arguments.get("query") or "")
-        if not target or not query.strip():
-            raise RuntimeError("query_sql requires arguments.target and arguments.query.")
-        if _use_headless_backend():
-            return execute_project_sql_headless(target, query, read_only=True)
-        return _api("/api/sql-query", {"project": target, "query": query})
-
-    if operation == "execute_sql":
-        _require_confirmation(confirm, "Executing write-capable SQL through the live capability gateway")
-        target=str(arguments.get("target") or "").strip()
-        query=str(arguments.get("query") or "")
-        if not target or not query.strip():
-            raise RuntimeError("execute_sql requires arguments.target and arguments.query.")
-        if _use_headless_backend():
-            return execute_project_sql_headless(target, query, read_only=False)
-        return _api("/api/sql-execute", {"project": target, "query": query, "confirm": True})
-
-    raise RuntimeError(f"Live capability '{operation}' is advertised but not implemented.")
+    return _runtime_bridge().invoke_live_capability(operation, arguments, confirm=confirm)
 
 
 @mcp.tool()
 def get_capabilities() -> dict[str, Any]:
-    """Return the server's live capability registry. Use this when plugin metadata may be stale after a Supabase Multi update."""
-    _ensure_control_plane()
-    local_runtime = _control_plane_runtime()
-    mcp_runtime = runtime_payload("mcp-server")
-    return {
-        "server_version": "0.2.0",
-        "generation": LIVE_CAPABILITY_GENERATION,
-        "runtime": {
-            "mcp": mcp_runtime,
-            "control_plane": local_runtime,
-            "control_plane_current": _runtime_is_current(local_runtime),
-        },
-        "capabilities": [
-            {"operation": name, **meta}
-            for name, meta in sorted(LIVE_CAPABILITIES.items())
-        ],
-        "note": (
-            "These capabilities are discovered live from the running Supabase Multi server. "
-            "They can be invoked through invoke_capability without changing that tool's schema."
-        ),
-    }
+    """Return the live capability registry from the hot-reload runtime bridge."""
+    return _runtime_bridge().get_capabilities()
 
 
 @mcp.tool()
@@ -357,8 +331,6 @@ def verify_access(target: str) -> dict[str, Any]:
 @mcp.tool()
 def query_sql(target: str, query: str) -> dict[str, Any]:
     """Run SQL through the official Supabase MCP in forced read-only mode for one exact Supabase Multi target."""
-    if _use_headless_backend():
-        return execute_project_sql_headless(target, query, read_only=True)
     return _api("/api/sql-query", {"project": target, "query": query})
 
 
@@ -366,10 +338,6 @@ def query_sql(target: str, query: str) -> dict[str, Any]:
 def execute_sql(target: str, query: str, confirm: bool = False) -> dict[str, Any]:
     """Run SQL that may write to the database. Requires explicit confirm=true and refuses targets configured read-only."""
     _require_confirmation(confirm, f"Executing write-capable SQL on '{target}'")
-
-    if _use_headless_backend():
-        return execute_project_sql_headless(target, query, read_only=False)
-
     return _api("/api/sql-execute", {"project": target, "query": query, "confirm": True})
 
 @mcp.tool()

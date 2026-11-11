@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent
 RUNTIME_FILES = (
     ROOT / "local-ui" / "server.py",
     ROOT / "mcp" / "server.py",
+    ROOT / "mcp" / "runtime_bridge.py",
     ROOT / "mcp" / "headless_control_plane.py",
 )
 STARTED_AT = time.time()
