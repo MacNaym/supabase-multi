@@ -42,7 +42,12 @@ Supabase Multi does **not** replace the official Supabase MCP server. It solves 
 > **Supabase Multi decides which Supabase account/project/target an agent should use.  
 > The official Supabase MCP server performs the actual Supabase work for that project.**
 
-For AI workflows that need to inspect or modify a Supabase project, the official Supabase MCP server should be installed/configured as a companion dependency. Supabase Multi routes the agent to the correct project-specific MCP target; it does not itself implement Supabase database operations.
+For most project-level work, the official Supabase MCP server remains the executor. Supabase Multi routes the agent to the correct project-specific target and can also proxy SQL through the official Supabase MCP after resolving the exact project:
+
+- `query_sql(target, query)` forces downstream read-only mode;
+- `execute_sql(target, query, confirm=true)` uses the write-capable SQL path and refuses targets configured as read-only.
+
+Other Supabase operations such as logs, advisors, migrations and Edge Functions remain the responsibility of the official Supabase MCP connection.
 
 ---
 
@@ -479,12 +484,12 @@ These are enough for:
 
 ## Required for AI agents to work inside Supabase projects
 
-If you want an AI agent to do actual Supabase project work after Supabase Multi resolves the correct target, you also need the **official Supabase MCP server** (or another equivalent Supabase integration).
+Supabase Multi uses the **official Supabase MCP server** as its project-level execution boundary. The SQL tools in Supabase Multi proxy to the official MCP using the resolved project and that project's PAT; other project-level operations continue to use the official MCP directly.
 
 Typical project-level operations include:
 
 - inspecting database objects;
-- running SQL;
+- running SQL directly through the official MCP or through Supabase Multi's SQL proxy;
 - creating or reviewing migrations;
 - reading logs;
 - running advisors;
@@ -594,9 +599,24 @@ GitHub Actions now verifies the public installation surface on Windows. CI:
 - runs `setup.bat` from a clean checkout;
 - verifies the generated MCP virtual environment and local registry;
 - starts the control plane and probes `/api/state?local=1`;
+- performs a real MCP stdio initialize/tool-discovery handshake;
+- runs the SQL proxy safety regression tests;
 - runs Gitleaks against the repository history.
 
 See [docs/installation.md](docs/installation.md) for the step-by-step installation guide.
+
+## Updating
+
+For a Git clone:
+
+```powershell
+git pull
+.\setup.bat
+```
+
+Running `setup.bat` again is safe: it reuses the existing virtual environment and does not replace an existing `registry.json`.
+
+Supabase Multi is local-first and does not require a permanently running service. Start it when needed with `start-supabase-multi.bat` or let an MCP client launch `mcp/server.py`.
 
 ---
 
@@ -939,7 +959,7 @@ No manual project selection is necessary when the repository mapping is unambigu
 
 # MCP tools
 
-The current MCP server exposes 27 tools.
+The current MCP server exposes **31 tools**.
 
 ## Read and routing
 
@@ -963,6 +983,18 @@ Resolves the intended project and returns `resolved`, `ambiguous`, or `not_found
 
 ### `verify_access`
 Verifies project access using PAT first and CLI fallback second.
+
+### `query_sql`
+Runs SQL through the official project-scoped Supabase MCP with downstream `read_only=true`.
+
+### `execute_sql`
+Runs write-capable SQL through the official project-scoped Supabase MCP. Requires `confirm=true` and refuses targets configured read-only.
+
+### `get_capabilities`
+Returns the live server-side capability registry and generation. Useful when a client has stale MCP tool metadata.
+
+### `invoke_capability`
+Invokes one operation advertised by `get_capabilities` through a server-side whitelist. Write-capable operations still require explicit confirmation.
 
 ### `list_orphaned_secrets`
 Returns orphaned environment-variable names only.
@@ -1177,12 +1209,14 @@ Responsible for:
 Responsible for project-level Supabase work such as:
 
 - database inspection;
-- SQL;
+- SQL execution;
 - migrations;
 - logs;
 - advisors;
 - functions;
 - development operations.
+
+Supabase Multi's `query_sql` and `execute_sql` tools are thin, target-aware proxies to the official MCP `execute_sql` tool; they do not bypass Supabase's own MCP security model.
 
 Supabase recommends project scoping, read-only mode where appropriate, limited feature groups, and review of tool calls for production environments.
 
@@ -1437,7 +1471,7 @@ Supabase Multi is currently in pre-release testing.
 
 The human control plane and MCP server are functional.
 
-The current MCP implementation exposes 27 tools and has been successfully tested with MCP Inspector using the MCP Python SDK v2 line.
+The current MCP implementation exposes **31 tools**. It is covered by real stdio MCP handshake/tool-discovery tests, and the write-capable SQL proxy has been verified end-to-end against a disposable Supabase target.
 
 ---
 

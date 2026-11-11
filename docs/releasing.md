@@ -10,10 +10,13 @@ Before creating a release:
 4. test `get_dashboard`;
 5. test resolved/ambiguous/not-found routing;
 6. test PAT and CLI fallback behavior;
-7. test destructive confirmation gates;
-8. run secret scanning;
-9. inspect `git status`;
-10. test a clean install from the release archive.
+7. test `query_sql` against a disposable/non-production target;
+8. when SQL transport changed, test `execute_sql(..., confirm=true)` end-to-end against a disposable target and verify the target read-only gate;
+9. test destructive confirmation gates;
+10. verify the MCP tool count and live capability registry;
+11. run secret scanning;
+12. inspect `git status`;
+13. test a clean install from the release archive.
 
 ## Versioning
 
