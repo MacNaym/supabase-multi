@@ -52,3 +52,33 @@ Verify the account's isolated browser profile and reopen the project through Sup
 This is expected after project deletion.
 
 Review it under `Status → Orphaned secrets` before deleting it.
+
+## SQL proxy returns HTTP 403
+
+Supabase Multi proxies SQL through the official project-scoped Supabase MCP. Current code sends an explicit `User-Agent` because Python `urllib` requests without one may be rejected by the remote edge layer.
+
+If a 403 appears:
+
+1. update to the latest Supabase Multi revision;
+2. verify the project's PAT can read the project through the Supabase Management API;
+3. verify the same PAT can initialize the official Supabase MCP endpoint for that `project_ref`;
+4. confirm the target is not configured `read_only` before using `execute_sql`.
+
+Do not work around a 403 by exposing or logging the PAT.
+
+## SQL writes are blocked
+
+`execute_sql(target, query, confirm=true)` is intentionally write-capable only when both conditions are true:
+
+- the caller explicitly sends `confirm=true`;
+- the target is not configured `read_only`.
+
+Use `query_sql` for forced read-only SQL.
+
+## Client shows an old tool list
+
+The current server exposes 31 tools. Some MCP/plugin clients cache tool metadata for an existing session.
+
+- start a new client conversation/session after refreshing MCP metadata;
+- use `get_capabilities` and `invoke_capability` for the stable live-capability gateway;
+- verify the server itself with MCP Inspector or a fresh stdio handshake before assuming the local server is stale.
