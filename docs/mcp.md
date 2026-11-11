@@ -49,8 +49,19 @@ From `mcp/`:
 .\.venv\Scripts\mcp.exe dev server.py
 ```
 
-The expected current server exposes 29 tools.
+The expected current server exposes 31 tools.
 
 ## Codex and other harnesses
 
 The server speaks standard MCP over stdio. CI launches a real MCP client, initializes the server and lists tools, which verifies the transport independently of Codex. Client-specific integration is documented in [codex.md](codex.md).
+
+## Live capability gateway
+
+ChatGPT custom MCP plugins may keep a frozen snapshot of tool metadata until an explicit Refresh is approved in ChatGPT. Supabase Multi therefore exposes two stable tools designed to avoid repeated metadata churn:
+
+- `get_capabilities()` returns the live server-side capability registry and generation;
+- `invoke_capability(operation, arguments, confirm=false)` executes one advertised capability through a server-side whitelist.
+
+The gateway schema is intentionally stable. New operations can be added to the live registry without changing the gateway tool schema, so clients that already know these two tools can discover and use future capabilities without requiring a new tool definition.
+
+Write-capable live operations still require `confirm=true`, and all existing target/read-only/PAT safety rules remain enforced downstream.
