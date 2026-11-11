@@ -11,6 +11,10 @@ import urllib.request
 import urllib.error
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from runtime_identity import runtime_payload
+
 UI_DIR = Path(__file__).resolve().parent
 REGISTRY = ROOT / "registry.json"
 BACKUPS = ROOT / "backups"
@@ -1123,6 +1127,9 @@ class Handler(SimpleHTTPRequestHandler):
         l=int(self.headers.get("Content-Length","0")); raw=self.rfile.read(l); return json.loads(raw.decode()) if raw else {}
     def do_GET(self):
         p=urlparse(self.path)
+        if p.path=="/api/runtime":
+            self.send_json({"ok":True,"runtime":runtime_payload("local-control-plane")})
+            return
         if p.path=="/api/state":
             try:self.send_json({"ok":True,"data":state_payload(check_remote=urllib.parse.parse_qs(p.query).get("local", ["0"])[0] != "1")})
             except Exception as e:self.send_json({"ok":False,"error":str(e)},500)
@@ -1142,6 +1149,10 @@ class Handler(SimpleHTTPRequestHandler):
         path=urlparse(self.path).path
         try:
             body=self.read_json()
+            if path=="/api/shutdown":
+                self.send_json({"ok":True,"message":"Supabase Multi local control plane shutting down."})
+                threading.Thread(target=self.server.shutdown,daemon=True).start()
+                return
             if path=="/api/resolve":
                 reg=read_registry()
                 result=resolve_project_candidates(
@@ -1489,7 +1500,9 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:self.send_json({"ok":False,"error":str(e)},400)
 
 def main():
-    print("Supabase Multi Local Admin v3.5.3")
+    runtime=runtime_payload("local-control-plane")
+    print("Supabase Multi Local Admin v3.5.4")
+    print(f"runtime={runtime['source_fingerprint'][:12]} git={runtime['git_commit'][:12] or 'unknown'}")
     print(f"http://{HOST}:{PORT}  (localhost only)")
     server=ThreadingHTTPServer((HOST,PORT),Handler)
     threading.Timer(.8,lambda:webbrowser.open(f"http://{HOST}:{PORT}")).start()
