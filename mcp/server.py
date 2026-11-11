@@ -16,7 +16,10 @@ MCP_DIR = Path(__file__).resolve().parent
 if str(MCP_DIR) not in sys.path:
     sys.path.insert(0, str(MCP_DIR))
 
-from headless_control_plane import execute_project_sql as execute_project_sql_headless
+from headless_control_plane import (
+    execute_project_sql as execute_project_sql_headless,
+    handle_api as headless_api,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTROL_PLANE = ROOT / "local-ui" / "server.py"
@@ -102,9 +105,10 @@ def _ensure_control_plane() -> None:
 
 
 def _api(path: str, payload: dict[str, Any] | None = None, timeout: int = 120) -> dict[str, Any]:
+    if _use_headless_backend():
+        return headless_api(path, payload or {})
     _ensure_control_plane()
     return _json_request(path, payload, timeout=timeout)
-
 
 def _state() -> dict[str, Any]:
     return _api("/api/state?local=1")["data"]
