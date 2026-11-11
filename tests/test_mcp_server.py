@@ -183,7 +183,14 @@ def test_ensure_control_plane_restarts_stale_runtime(monkeypatch):
         state["stopped"] = True
 
     monkeypatch.setattr(module, "_stop_stale_control_plane", fake_stop)
-    monkeypatch.setattr(module.CONTROL_PLANE, "exists", lambda: True)
+
+    class FakeControlPlane:
+        def exists(self):
+            return True
+        def __str__(self):
+            return "fake-control-plane.py"
+
+    monkeypatch.setattr(module, "CONTROL_PLANE", FakeControlPlane())
 
     class FakePopen:
         def __init__(self, *args, **kwargs):
