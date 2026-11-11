@@ -22,6 +22,10 @@ from headless_control_plane import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from runtime_identity import runtime_payload, source_fingerprint
+
 CONTROL_PLANE = ROOT / "local-ui" / "server.py"
 BASE_URL = os.environ.get("SUPABASE_MULTI_URL", "http://127.0.0.1:8765").rstrip("/")
 
@@ -72,7 +76,7 @@ def _json_request(path: str, payload: dict[str, Any] | None = None, timeout: int
     return out
 
 
-def _is_up() -> bool:
+def _legacy_is_up() -> bool:
     try:
         _json_request("/api/state?local=1", timeout=2)
         return True
@@ -80,10 +84,55 @@ def _is_up() -> bool:
         return False
 
 
+def _control_plane_runtime() -> dict[str, Any] | None:
+    try:
+        out = _json_request("/api/runtime", timeout=2)
+        runtime = out.get("runtime")
+        return runtime if isinstance(runtime, dict) else None
+    except Exception:
+        return None
+
+
+def _runtime_is_current(runtime: dict[str, Any] | None) -> bool:
+    return bool(
+        runtime
+        and runtime.get("app") == "supabase-multi"
+        and runtime.get("source_fingerprint") == source_fingerprint()
+    )
+
+
+def _stop_stale_control_plane() -> None:
+    try:
+        _json_request("/api/shutdown", {}, timeout=3)
+    except Exception:
+        if os.name == "nt" and BASE_URL == "http://127.0.0.1:8765":
+            command = (
+                "$c=Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue;"
+                "if($c){$c|ForEach-Object{Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue}}"
+            )
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command", command],
+                capture_output=True,
+                timeout=10,
+            )
+    deadline = time.time() + 4
+    while time.time() < deadline and _legacy_is_up():
+        time.sleep(0.1)
+
+
+def _is_up() -> bool:
+    return _runtime_is_current(_control_plane_runtime())
+
+
 def _ensure_control_plane() -> None:
     global _control_plane_proc
-    if _is_up():
+    runtime = _control_plane_runtime()
+    if _runtime_is_current(runtime):
         return
+
+    if runtime is not None or _legacy_is_up():
+        _stop_stale_control_plane()
+
     if not CONTROL_PLANE.exists():
         raise RuntimeError(f"Supabase Multi control plane not found at {CONTROL_PLANE}")
     flags = 0
@@ -98,10 +147,13 @@ def _ensure_control_plane() -> None:
     )
     deadline = time.time() + 12
     while time.time() < deadline:
-        if _is_up():
+        runtime = _control_plane_runtime()
+        if _runtime_is_current(runtime):
             return
         time.sleep(0.25)
-    raise RuntimeError("Supabase Multi control plane did not start on 127.0.0.1:8765.")
+    raise RuntimeError(
+        "Supabase Multi control plane did not start with the current runtime fingerprint."
+    )
 
 
 def _api(path: str, payload: dict[str, Any] | None = None, timeout: int = 120) -> dict[str, Any]:
@@ -189,9 +241,17 @@ def _invoke_live_capability(operation: str, arguments: dict[str, Any], confirm: 
 @mcp.tool()
 def get_capabilities() -> dict[str, Any]:
     """Return the server's live capability registry. Use this when plugin metadata may be stale after a Supabase Multi update."""
+    _ensure_control_plane()
+    local_runtime = _control_plane_runtime()
+    mcp_runtime = runtime_payload("mcp-server")
     return {
         "server_version": "0.2.0",
         "generation": LIVE_CAPABILITY_GENERATION,
+        "runtime": {
+            "mcp": mcp_runtime,
+            "control_plane": local_runtime,
+            "control_plane_current": _runtime_is_current(local_runtime),
+        },
         "capabilities": [
             {"operation": name, **meta}
             for name, meta in sorted(LIVE_CAPABILITIES.items())
