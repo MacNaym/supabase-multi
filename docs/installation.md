@@ -11,7 +11,7 @@ Supabase Multi currently targets Windows 10/11.
 
 The dashboard and PAT-based flows can start without the Supabase CLI, but CLI-backed account discovery will be unavailable until the CLI is installed.
 
-For AI agents that need to perform actual database/project work, configure the official Supabase MCP server as the executor. Supabase Multi remains the local control plane/router.
+For AI agents that need to perform actual database/project work, the official Supabase MCP remains the project-level executor. Supabase Multi stays the local control plane/router and can proxy `query_sql` / `execute_sql` through the official project-scoped MCP after resolving the exact target.
 
 ## Clean install
 
@@ -126,6 +126,8 @@ git pull
 ```
 
 Running `setup.bat` again is safe: it reuses the existing virtual environment and does not replace an existing `registry.json`.
+
+Supabase Multi does not need to run continuously. After updating, start it only when needed with `.\start-supabase-multi.bat` or let your local MCP client launch `mcp\server.py`.
 
 ## Troubleshooting
 
