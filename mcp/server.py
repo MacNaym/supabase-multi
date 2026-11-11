@@ -468,9 +468,23 @@ def clean_all_orphaned_secrets(confirm: bool = False) -> dict[str, Any]:
 
 
 def main() -> None:
-    """Run Supabase Multi MCP over stdio."""
-    mcp.run()
+    """Run Supabase Multi MCP over stdio or Streamable HTTP."""
+    transport = os.environ.get("SUPABASE_MULTI_MCP_TRANSPORT", "stdio").strip().lower()
 
+    if transport == "streamable-http":
+        host = os.environ.get("SUPABASE_MULTI_MCP_HOST", "127.0.0.1")
+        port = int(os.environ.get("SUPABASE_MULTI_MCP_PORT", "8000"))
+        path = os.environ.get("SUPABASE_MULTI_MCP_PATH", "/mcp")
+
+        mcp.run(
+            "streamable-http",
+            host=host,
+            port=port,
+            streamable_http_path=path,
+        )
+        return
+
+    mcp.run("stdio")
 
 if __name__ == "__main__":
     main()
