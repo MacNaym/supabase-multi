@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -13,6 +14,8 @@ REGISTRY = Path(os.environ.get("SUPABASE_MULTI_REGISTRY", ROOT / "registry.json"
 MCP_URL = "https://mcp.supabase.com/mcp"
 MANAGEMENT_URL = "https://api.supabase.com/v1"
 DEFAULT_FEATURES = "database"
+MCP_PROTOCOL_VERSION = "2025-06-18"
+MCP_USER_AGENT = "Supabase-Multi/0.2"
 
 
 def read_registry() -> dict[str, Any]:
@@ -334,15 +337,19 @@ def mcp_post(
     payload: dict[str, Any],
     session_id: str | None = None,
     endpoint: str = MCP_URL,
+    *,
+    protocol_version: str = MCP_PROTOCOL_VERSION,
+    return_meta: bool = False,
 ):
-    body = json.dumps(payload).encode()
+    body = json.dumps(payload).encode("utf-8")
+    method = str(payload.get("method") or "")
 
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
-        "MCP-Protocol-Version": "2025-06-18",
-        "User-Agent": "Supabase-Multi/0.2",
+        "MCP-Protocol-Version": protocol_version,
+        "User-Agent": MCP_USER_AGENT,
     }
 
     if session_id:
@@ -355,26 +362,75 @@ def mcp_post(
         method="POST",
     )
 
-    with urllib.request.urlopen(req, timeout=40) as resp:
-        text = resp.read().decode("utf-8", errors="replace")
-        sid = resp.headers.get("Mcp-Session-Id") or session_id
+    status = 0
+    response_headers: Any = {}
+    text = ""
+    http_error = ""
+
+    try:
+        with urllib.request.urlopen(req, timeout=40) as resp:
+            status = int(getattr(resp, "status", resp.getcode()))
+            response_headers = resp.headers
+            text = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        status = int(exc.code)
+        response_headers = exc.headers or {}
+        text = exc.read().decode("utf-8", errors="replace")
+        http_error = str(exc)
+        if not return_meta:
+            raise
+
+    sid = response_headers.get("Mcp-Session-Id") or session_id
+    parsed: dict[str, Any] = {}
 
     if "data:" in text:
         events = []
-
         for line in text.splitlines():
             if line.startswith("data:"):
                 try:
                     events.append(json.loads(line[5:].strip()))
                 except Exception:
                     pass
+        parsed = events[-1] if events else {}
+    else:
+        try:
+            parsed = json.loads(text) if text else {}
+        except Exception:
+            parsed = {}
 
-        return (events[-1] if events else {}), sid
+    meta = {
+        "method": method,
+        "status": status,
+        "content_type": str(response_headers.get("Content-Type") or ""),
+        "request_protocol_version": protocol_version,
+        "request_session_id_present": bool(session_id),
+        "response_session_id_present": bool(response_headers.get("Mcp-Session-Id")),
+        "body_bytes": len(text.encode("utf-8")),
+        "user_agent": MCP_USER_AGENT,
+        "http_error": http_error,
+    }
 
-    try:
-        return json.loads(text), sid
-    except Exception:
-        return {}, sid
+    if return_meta:
+        return parsed, sid, meta
+    return parsed, sid
+
+
+def _mcp_phase_error(phase: str, payload: Any, meta: dict[str, Any]) -> str:
+    msg = _mcp_error_message(payload)
+    parts = [
+        f"phase={phase}",
+        f"http_status={meta.get('status')}",
+        f"content_type={meta.get('content_type') or 'none'}",
+        f"request_protocol={meta.get('request_protocol_version')}",
+        f"request_session={meta.get('request_session_id_present')}",
+        f"response_session={meta.get('response_session_id_present')}",
+        f"body_bytes={meta.get('body_bytes')}",
+    ]
+    if msg:
+        parts.append("mcp_error=" + msg)
+    if meta.get("http_error"):
+        parts.append("http_error=" + str(meta["http_error"]))
+    return " | ".join(parts)
 
 
 def _mcp_error_message(payload: Any) -> str:
@@ -461,14 +517,14 @@ def execute_project_sql(
 
     endpoint = MCP_URL + "?" + urllib.parse.urlencode(params)
 
-    init, sid = mcp_post(
+    init, sid, init_meta = mcp_post(
         token,
         {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": "2025-06-18",
+                "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {},
                 "clientInfo": {
                     "name": "supabase-multi-headless",
@@ -477,28 +533,49 @@ def execute_project_sql(
             },
         },
         endpoint=endpoint,
+        return_meta=True,
     )
 
-    msg = _mcp_error_message(init)
-
-    if msg:
-        raise RuntimeError("Supabase MCP initialize failed: " + msg)
-
-    try:
-        mcp_post(
-            token,
-            {
-                "jsonrpc": "2.0",
-                "method": "notifications/initialized",
-                "params": {},
-            },
-            sid,
-            endpoint=endpoint,
+    if init_meta["status"] >= 400 or _mcp_error_message(init):
+        raise RuntimeError(
+            "Supabase MCP initialize failed: "
+            + _mcp_phase_error("initialize", init, init_meta)
         )
-    except Exception:
-        pass
 
-    payload, sid = mcp_post(
+    negotiated = str(
+        ((init or {}).get("result") or {}).get("protocolVersion")
+        or MCP_PROTOCOL_VERSION
+    )
+    if negotiated != MCP_PROTOCOL_VERSION:
+        raise RuntimeError(
+            "Supabase MCP negotiated an unsupported protocol version: "
+            + negotiated
+        )
+
+    initialized, sid, initialized_meta = mcp_post(
+        token,
+        {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {},
+        },
+        sid,
+        endpoint=endpoint,
+        protocol_version=negotiated,
+        return_meta=True,
+    )
+
+    if initialized_meta["status"] != 202:
+        raise RuntimeError(
+            "Supabase MCP notifications/initialized failed: "
+            + _mcp_phase_error(
+                "notifications/initialized",
+                initialized,
+                initialized_meta,
+            )
+        )
+
+    payload, sid, tool_meta = mcp_post(
         token,
         {
             "jsonrpc": "2.0",
@@ -513,12 +590,17 @@ def execute_project_sql(
         },
         sid,
         endpoint=endpoint,
+        protocol_version=negotiated,
+        return_meta=True,
     )
 
     msg = _mcp_error_message(payload)
 
-    if msg:
-        raise RuntimeError("Supabase MCP execute_sql failed: " + msg)
+    if tool_meta["status"] >= 400 or msg:
+        raise RuntimeError(
+            "Supabase MCP execute_sql failed: "
+            + _mcp_phase_error("tools/call", payload, tool_meta)
+        )
 
     result = (payload or {}).get("result", {}) or {}
 
@@ -536,6 +618,12 @@ def execute_project_sql(
         "source": "official-supabase-mcp",
         "content": result.get("content", []),
         "structured_content": result.get("structuredContent"),
+        "mcp_transport": {
+            "negotiated_protocol_version": negotiated,
+            "initialize": init_meta,
+            "notifications_initialized": initialized_meta,
+            "tools_call": tool_meta,
+        },
     }
 
 
