@@ -33,4 +33,6 @@ def test_mcp_server_starts_over_stdio_and_lists_tools():
     assert "query_sql" in names
     assert "execute_sql" in names
     assert "clean_all_orphaned_secrets" in names
-    assert len(names) >= 29
+    assert "get_capabilities" in names
+    assert "invoke_capability" in names
+    assert len(names) >= 31

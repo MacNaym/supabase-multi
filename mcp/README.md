@@ -100,3 +100,9 @@ Resolve the exact target before either tool. Raw PAT values remain local and are
 ## Codex
 
 See [../docs/codex.md](../docs/codex.md) for direct stdio, Secure MCP Tunnel, startup checks, and current Codex-plugin packaging guidance.
+
+## Live capability gateway
+
+`get_capabilities` and `invoke_capability` provide a stable discovery/execution surface for clients whose plugin metadata may lag behind the running server. The gateway is whitelist-based and does not accept arbitrary local commands or arbitrary HTTP paths.
+
+For ChatGPT custom plugins, perform one metadata Refresh after installing this gateway. Future capabilities added behind the gateway can then be discovered live without changing the gateway schema.

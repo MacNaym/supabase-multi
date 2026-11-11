@@ -27,7 +27,7 @@ mcp = MCPServer(
         "surface the candidates so the user can confirm the intended account/project. "
         "Never request, print, or return raw PAT values."
     ),
-    version="0.1.0",
+    version="0.2.0",
 )
 
 _control_plane_proc: subprocess.Popen | None = None
@@ -124,6 +124,75 @@ def _require_confirmation(confirm: bool, action: str) -> None:
         raise RuntimeError(
             f"{action} is destructive. Call the tool again with confirm=true only after the user explicitly approves it."
         )
+
+
+LIVE_CAPABILITY_GENERATION = "2026-11-11.1"
+
+LIVE_CAPABILITIES: dict[str, dict[str, Any]] = {
+    "query_sql": {
+        "description": "Run SQL through the official Supabase MCP in forced read-only mode.",
+        "confirmation_required": False,
+        "write_capable": False,
+    },
+    "execute_sql": {
+        "description": "Run write-capable SQL through the official Supabase MCP.",
+        "confirmation_required": True,
+        "write_capable": True,
+    },
+}
+
+
+def _invoke_live_capability(operation: str, arguments: dict[str, Any], confirm: bool = False) -> dict[str, Any]:
+    operation=(operation or "").strip()
+    if operation not in LIVE_CAPABILITIES:
+        raise RuntimeError(
+            f"Unknown live capability '{operation}'. Call get_capabilities first and use one of the advertised operations."
+        )
+    arguments = arguments or {}
+
+    if operation == "query_sql":
+        target=str(arguments.get("target") or "").strip()
+        query=str(arguments.get("query") or "")
+        if not target or not query.strip():
+            raise RuntimeError("query_sql requires arguments.target and arguments.query.")
+        return _api("/api/sql-query", {"project": target, "query": query})
+
+    if operation == "execute_sql":
+        _require_confirmation(confirm, "Executing write-capable SQL through the live capability gateway")
+        target=str(arguments.get("target") or "").strip()
+        query=str(arguments.get("query") or "")
+        if not target or not query.strip():
+            raise RuntimeError("execute_sql requires arguments.target and arguments.query.")
+        return _api("/api/sql-execute", {"project": target, "query": query, "confirm": True})
+
+    raise RuntimeError(f"Live capability '{operation}' is advertised but not implemented.")
+
+
+@mcp.tool()
+def get_capabilities() -> dict[str, Any]:
+    """Return the server's live capability registry. Use this when plugin metadata may be stale after a Supabase Multi update."""
+    return {
+        "server_version": "0.2.0",
+        "generation": LIVE_CAPABILITY_GENERATION,
+        "capabilities": [
+            {"operation": name, **meta}
+            for name, meta in sorted(LIVE_CAPABILITIES.items())
+        ],
+        "note": (
+            "These capabilities are discovered live from the running Supabase Multi server. "
+            "They can be invoked through invoke_capability without changing that tool's schema."
+        ),
+    }
+
+
+@mcp.tool()
+def invoke_capability(
+    operation: str,
+    arguments: dict[str, Any],
+    confirm: bool = False,
+) -> dict[str, Any]:
+    """Invoke one operation returned by get_capabilities. Write-capable operations require explicit confirm=true."""
+    return _invoke_live_capability(operation, arguments, confirm=confirm)
 
 
 @mcp.tool()

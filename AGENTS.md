@@ -73,3 +73,10 @@ When changing routing, authentication, PAT checks, deletion behavior, or MCP too
 2. test the failure mode;
 3. test that no secret value is returned;
 4. update documentation if user-visible behavior changed.
+
+## Live capability gateway
+
+- If an expected explicit MCP tool is missing, call `get_capabilities` before declaring the operation unavailable.
+- Use `invoke_capability` only with an operation advertised by `get_capabilities`.
+- Never bypass confirmation requirements through the gateway.
+- The gateway must remain whitelist-based; do not add arbitrary shell, URL, SQL-target, or function dispatch.

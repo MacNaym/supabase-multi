@@ -78,3 +78,53 @@ def test_destructive_actions_require_explicit_confirmation():
         module._require_confirmation(False, "Deleting project 'example-prod'")
 
     module._require_confirmation(True, "Deleting project 'example-prod'")
+
+
+def test_live_capabilities_advertise_sql_operations():
+    module = load_module()
+    caps = module.get_capabilities()
+
+    names = {item["operation"] for item in caps["capabilities"]}
+    assert "query_sql" in names
+    assert "execute_sql" in names
+    assert caps["generation"] == module.LIVE_CAPABILITY_GENERATION
+
+
+def test_live_gateway_routes_read_only_sql(monkeypatch):
+    module = load_module()
+    seen = {}
+
+    def fake_api(path, payload=None, timeout=120):
+        seen["path"] = path
+        seen["payload"] = payload
+        return {"ok": True, "result": {"content": []}}
+
+    monkeypatch.setattr(module, "_api", fake_api)
+
+    result = module._invoke_live_capability(
+        "query_sql",
+        {"target": "example-prod", "query": "select 1"},
+        confirm=False,
+    )
+
+    assert seen["path"] == "/api/sql-query"
+    assert seen["payload"] == {"project": "example-prod", "query": "select 1"}
+    assert result["ok"] is True
+
+
+def test_live_gateway_requires_confirmation_for_write(monkeypatch):
+    module = load_module()
+
+    with pytest.raises(RuntimeError, match="confirm=true"):
+        module._invoke_live_capability(
+            "execute_sql",
+            {"target": "example-prod", "query": "update t set x=1"},
+            confirm=False,
+        )
+
+
+def test_live_gateway_rejects_unknown_operation():
+    module = load_module()
+
+    with pytest.raises(RuntimeError, match="Unknown live capability"):
+        module._invoke_live_capability("definitely_not_real", {}, confirm=False)
