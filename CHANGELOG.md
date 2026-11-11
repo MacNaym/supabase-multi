@@ -34,6 +34,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Repository tests remain green after the headless routing and SQL transport changes.
 
 ### Security
+- Clarified scoped PAT guidance: `Database: Read` permits read-only SQL through the official MCP, while actual SQL writes require `Database: Read-write`; migration permissions remain separate.
 - Live capability invocation is server-side whitelisted and preserves explicit confirmation for write-capable operations.
 - SQL reads force downstream `read_only=true`; SQL writes require explicit confirmation and are blocked for read-only targets.
 - Project PATs used for SQL remain local and are never returned through MCP.
