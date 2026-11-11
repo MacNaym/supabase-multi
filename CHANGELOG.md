@@ -7,6 +7,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 ## [Unreleased]
 
 ### Added
+- Stable `get_capabilities` / `invoke_capability` live gateway for clients with stale MCP tool metadata.
 - Real MCP stdio startup/initialize/tool-discovery regression test.
 - Codex integration and Secure MCP Tunnel documentation.
 - `query_sql` read-only SQL proxy through the official Supabase MCP.
@@ -26,6 +27,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Setup now enforces Python 3.11+ instead of only checking that Python exists.
 
 ### Security
+- Live capability invocation is server-side whitelisted and preserves explicit confirmation for write-capable operations.
 - SQL reads force downstream `read_only=true`; SQL writes require explicit confirmation and are blocked for read-only targets.
 - Project PATs used for SQL remain local and are never returned through MCP.
 - Documented the no-raw-PAT MCP invariant.
