@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib.util
+import hashlib
 import json
 import os
 import subprocess
@@ -8,6 +8,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import types
 from pathlib import Path
 from typing import Any
 
@@ -36,17 +37,16 @@ _runtime_bridge_stamp = None
 
 def _runtime_bridge():
     global _runtime_bridge_module, _runtime_bridge_stamp
-    stat = RUNTIME_BRIDGE.stat()
-    stamp = (stat.st_mtime_ns, stat.st_size)
+    source = RUNTIME_BRIDGE.read_bytes()
+    stamp = hashlib.sha256(source).hexdigest()
     if _runtime_bridge_module is not None and _runtime_bridge_stamp == stamp:
         return _runtime_bridge_module
 
-    module_name = f"supabase_multi_runtime_bridge_{stat.st_mtime_ns}_{stat.st_size}"
-    spec = importlib.util.spec_from_file_location(module_name, RUNTIME_BRIDGE)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Cannot load runtime bridge from {RUNTIME_BRIDGE}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module_name = f"supabase_multi_runtime_bridge_{stamp[:16]}"
+    module = types.ModuleType(module_name)
+    module.__file__ = str(RUNTIME_BRIDGE)
+    code = compile(source, str(RUNTIME_BRIDGE), "exec")
+    exec(code, module.__dict__)
     _runtime_bridge_module = module
     _runtime_bridge_stamp = stamp
     return module
