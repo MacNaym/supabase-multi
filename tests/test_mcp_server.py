@@ -22,15 +22,16 @@ def test_state_uses_fast_local_endpoint(monkeypatch):
     module = load_module()
     seen = {}
 
-    def fake_api(path, payload=None, timeout=120):
-        seen["path"] = path
-        return {"ok": True, "data": {"accounts": [], "projects": [], "orphan_secrets": []}}
+    class FakeBridge:
+        def state(self):
+            seen["called"] = True
+            return {"accounts": [], "projects": [], "orphan_secrets": []}
 
-    monkeypatch.setattr(module, "_api", fake_api)
+    monkeypatch.setattr(module, "_runtime_bridge", lambda: FakeBridge())
 
     state = module._state()
 
-    assert seen["path"] == "/api/state?local=1"
+    assert seen["called"] is True
     assert state["projects"] == []
 
 
@@ -103,12 +104,14 @@ def test_live_gateway_routes_read_only_sql(monkeypatch):
     module = load_module()
     seen = {}
 
-    def fake_api(path, payload=None, timeout=120):
-        seen["path"] = path
-        seen["payload"] = payload
-        return {"ok": True, "result": {"content": []}}
+    class FakeBridge:
+        def invoke_live_capability(self, operation, arguments, confirm=False):
+            seen["operation"] = operation
+            seen["arguments"] = arguments
+            seen["confirm"] = confirm
+            return {"ok": True, "result": {"content": []}}
 
-    monkeypatch.setattr(module, "_api", fake_api)
+    monkeypatch.setattr(module, "_runtime_bridge", lambda: FakeBridge())
 
     result = module._invoke_live_capability(
         "query_sql",
@@ -116,8 +119,9 @@ def test_live_gateway_routes_read_only_sql(monkeypatch):
         confirm=False,
     )
 
-    assert seen["path"] == "/api/sql-query"
-    assert seen["payload"] == {"project": "example-prod", "query": "select 1"}
+    assert seen["operation"] == "query_sql"
+    assert seen["arguments"] == {"target": "example-prod", "query": "select 1"}
+    assert seen["confirm"] is False
     assert result["ok"] is True
 
 
