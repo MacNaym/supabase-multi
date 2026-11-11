@@ -93,7 +93,9 @@ The repository CI contains regression tests for:
 
 `query_sql(target, query)` executes through the official project-scoped Supabase MCP in forced read-only mode.
 
-`execute_sql(target, query, confirm=true)` is write-capable, requires explicit confirmation, and refuses projects configured as read-only.
+`execute_sql(target, query, confirm=true)` uses the official Supabase MCP SQL tool and requires explicit confirmation in Supabase Multi. The official MCP tool is available with `Database: Read`, but actual SQL writes require the PAT to have `Database: Read-write`. Supabase Multi also refuses projects configured as read-only.
+
+`Migrations: Read-write` is separate and is only required when migration operations such as `apply_migration` are needed.
 
 Resolve the exact target before either tool. Raw PAT values remain local and are never returned by Supabase Multi MCP.
 

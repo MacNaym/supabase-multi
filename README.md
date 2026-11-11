@@ -242,21 +242,42 @@ Recommended for AI agents and automation.
 
 One scoped PAT per project.
 
-Typical permissions depend on the work the agent must perform. A broad development profile may include:
+Supabase permissions should match the job the agent is allowed to perform.
+
+For a **read-only SQL agent**, start from the smallest useful profile:
+
+```text
+Database: Read
+```
+
+Add only the read permissions actually needed, for example:
 
 ```text
 Project Settings: Read
 Advisors: Read
 Logs: Read
 API Keys: Read
-Database: Read-write
-Migrations: Read-write
-Edge Functions: Read-write
 ```
 
-Use the narrowest permissions required for your workflow.
+With `Database: Read`, the official Supabase MCP exposes `execute_sql`, but SQL is effectively read-only: write statements fail at the database permission layer.
 
-For production projects, prefer project scoping, read-only access where possible, and manual approval for write operations.
+For a **development/write agent** that must run INSERT/UPDATE/DELETE/DDL through Supabase Multi's `execute_sql` proxy, use:
+
+```text
+Database: Read-write
+```
+
+Add this only when migration operations are also required:
+
+```text
+Migrations: Read-write
+```
+
+And add other write scopes such as `Edge Functions: Read-write` only when that workflow genuinely needs them.
+
+Use the narrowest permissions required for your workflow. Prefer project-scoped PATs, especially for AI agents and automation.
+
+For production projects, prefer read-only access where possible and keep explicit human approval for write operations.
 
 Official Supabase MCP security guidance:
 
@@ -988,7 +1009,7 @@ Verifies project access using PAT first and CLI fallback second.
 Runs SQL through the official project-scoped Supabase MCP with downstream `read_only=true`.
 
 ### `execute_sql`
-Runs write-capable SQL through the official project-scoped Supabase MCP. Requires `confirm=true` and refuses targets configured read-only.
+Runs SQL through the official project-scoped Supabase MCP. Supabase exposes the tool with `Database: Read`, but actual write statements require the PAT to have `Database: Read-write`. Supabase Multi also requires `confirm=true` and refuses targets configured read-only.
 
 ### `get_capabilities`
 Returns the live server-side capability registry and generation. Useful when a client has stale MCP tool metadata.
