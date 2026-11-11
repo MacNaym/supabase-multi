@@ -95,7 +95,7 @@ def test_live_capabilities_advertise_sql_operations(monkeypatch):
     names = {item["operation"] for item in caps["capabilities"]}
     assert "query_sql" in names
     assert "execute_sql" in names
-    assert caps["generation"] == module.LIVE_CAPABILITY_GENERATION
+    assert caps["generation"] == "2026-11-11.2"
     assert caps["runtime"]["control_plane_current"] is True
 
 
@@ -202,3 +202,41 @@ def test_ensure_control_plane_restarts_stale_runtime(monkeypatch):
 
     assert state["stopped"] is True
     assert state["started"] is True
+
+
+def test_runtime_bridge_hot_reloads_without_reimporting_mcp_server(monkeypatch, tmp_path):
+    module = load_module()
+    bridge = tmp_path / "runtime_bridge.py"
+    bridge.write_text(
+        "def api(path, payload=None, timeout=120):\n"
+        "    return {'ok': True, 'version': 1}\n"
+        "def state():\n"
+        "    return {'projects': []}\n"
+        "def get_capabilities():\n"
+        "    return {'generation': 'one', 'capabilities': []}\n"
+        "def invoke_live_capability(operation, arguments, confirm=False):\n"
+        "    return {'version': 1}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "RUNTIME_BRIDGE", bridge)
+    module._runtime_bridge_module = None
+    module._runtime_bridge_stamp = None
+
+    first = module._api("/anything")
+    assert first["version"] == 1
+
+    bridge.write_text(
+        "def api(path, payload=None, timeout=120):\n"
+        "    return {'ok': True, 'version': 2}\n"
+        "def state():\n"
+        "    return {'projects': []}\n"
+        "def get_capabilities():\n"
+        "    return {'generation': 'two', 'capabilities': []}\n"
+        "def invoke_live_capability(operation, arguments, confirm=False):\n"
+        "    return {'version': 2}\n",
+        encoding="utf-8",
+    )
+
+    second = module._api("/anything")
+    assert second["version"] == 2
+    assert module.get_capabilities()["generation"] == "two"
