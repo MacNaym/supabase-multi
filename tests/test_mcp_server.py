@@ -80,14 +80,23 @@ def test_destructive_actions_require_explicit_confirmation():
     module._require_confirmation(True, "Deleting project 'example-prod'")
 
 
-def test_live_capabilities_advertise_sql_operations():
+def test_live_capabilities_advertise_sql_operations(monkeypatch):
     module = load_module()
+    current = {
+        "app": "supabase-multi",
+        "component": "local-control-plane",
+        "source_fingerprint": module.source_fingerprint(),
+    }
+    monkeypatch.setattr(module, "_ensure_control_plane", lambda: None)
+    monkeypatch.setattr(module, "_control_plane_runtime", lambda: current)
+
     caps = module.get_capabilities()
 
     names = {item["operation"] for item in caps["capabilities"]}
     assert "query_sql" in names
     assert "execute_sql" in names
     assert caps["generation"] == module.LIVE_CAPABILITY_GENERATION
+    assert caps["runtime"]["control_plane_current"] is True
 
 
 def test_live_gateway_routes_read_only_sql(monkeypatch):
@@ -128,3 +137,61 @@ def test_live_gateway_rejects_unknown_operation():
 
     with pytest.raises(RuntimeError, match="Unknown live capability"):
         module._invoke_live_capability("definitely_not_real", {}, confirm=False)
+
+
+def test_runtime_fingerprint_detects_stale_control_plane(monkeypatch):
+    module = load_module()
+    current = module.source_fingerprint()
+
+    assert module._runtime_is_current({
+        "app": "supabase-multi",
+        "source_fingerprint": current,
+    }) is True
+
+    assert module._runtime_is_current({
+        "app": "supabase-multi",
+        "source_fingerprint": "old-build",
+    }) is False
+
+
+def test_ensure_control_plane_restarts_stale_runtime(monkeypatch):
+    module = load_module()
+    expected = module.source_fingerprint()
+    state = {
+        "runtime": {
+            "app": "supabase-multi",
+            "source_fingerprint": "old-build",
+        },
+        "stopped": False,
+        "started": False,
+    }
+
+    def fake_runtime():
+        if state["started"]:
+            return {
+                "app": "supabase-multi",
+                "source_fingerprint": expected,
+            }
+        if state["stopped"]:
+            return None
+        return state["runtime"]
+
+    monkeypatch.setattr(module, "_control_plane_runtime", fake_runtime)
+    monkeypatch.setattr(module, "_legacy_is_up", lambda: not state["stopped"] and not state["started"])
+
+    def fake_stop():
+        state["stopped"] = True
+
+    monkeypatch.setattr(module, "_stop_stale_control_plane", fake_stop)
+    monkeypatch.setattr(module.CONTROL_PLANE, "exists", lambda: True)
+
+    class FakePopen:
+        def __init__(self, *args, **kwargs):
+            state["started"] = True
+
+    monkeypatch.setattr(module.subprocess, "Popen", FakePopen)
+
+    module._ensure_control_plane()
+
+    assert state["stopped"] is True
+    assert state["started"] is True
