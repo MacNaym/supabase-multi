@@ -1,0 +1,18 @@
+[Unit]
+Description=Supabase Multi MCP
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/supabase-multi
+Environment=SUPABASE_MULTI_MCP_TRANSPORT=streamable-http
+Environment=SUPABASE_MULTI_BACKEND=headless
+Environment=SUPABASE_MULTI_MCP_HOST=127.0.0.1
+Environment=SUPABASE_MULTI_MCP_PORT=8010
+Environment=SUPABASE_MULTI_MCP_PATH=/mcp
+ExecStart=/srv/supabase-multi/mcp/.venv/bin/python /srv/supabase-multi/mcp/server.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

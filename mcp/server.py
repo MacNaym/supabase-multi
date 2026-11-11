@@ -12,6 +12,12 @@ from typing import Any
 
 from mcp.server import MCPServer
 
+MCP_DIR = Path(__file__).resolve().parent
+if str(MCP_DIR) not in sys.path:
+    sys.path.insert(0, str(MCP_DIR))
+
+from headless_control_plane import execute_project_sql as execute_project_sql_headless
+
 ROOT = Path(__file__).resolve().parent.parent
 CONTROL_PLANE = ROOT / "local-ui" / "server.py"
 BASE_URL = os.environ.get("SUPABASE_MULTI_URL", "http://127.0.0.1:8765").rstrip("/")
@@ -31,6 +37,10 @@ mcp = MCPServer(
 )
 
 _control_plane_proc: subprocess.Popen | None = None
+
+
+def _use_headless_backend() -> bool:
+    return os.environ.get("SUPABASE_MULTI_BACKEND", "local").strip().lower() == "headless"
 
 
 def _json_request(path: str, payload: dict[str, Any] | None = None, timeout: int = 120) -> dict[str, Any]:
@@ -155,6 +165,8 @@ def _invoke_live_capability(operation: str, arguments: dict[str, Any], confirm: 
         query=str(arguments.get("query") or "")
         if not target or not query.strip():
             raise RuntimeError("query_sql requires arguments.target and arguments.query.")
+        if _use_headless_backend():
+            return execute_project_sql_headless(target, query, read_only=True)
         return _api("/api/sql-query", {"project": target, "query": query})
 
     if operation == "execute_sql":
@@ -163,6 +175,8 @@ def _invoke_live_capability(operation: str, arguments: dict[str, Any], confirm: 
         query=str(arguments.get("query") or "")
         if not target or not query.strip():
             raise RuntimeError("execute_sql requires arguments.target and arguments.query.")
+        if _use_headless_backend():
+            return execute_project_sql_headless(target, query, read_only=False)
         return _api("/api/sql-execute", {"project": target, "query": query, "confirm": True})
 
     raise RuntimeError(f"Live capability '{operation}' is advertised but not implemented.")
@@ -279,6 +293,8 @@ def verify_access(target: str) -> dict[str, Any]:
 @mcp.tool()
 def query_sql(target: str, query: str) -> dict[str, Any]:
     """Run SQL through the official Supabase MCP in forced read-only mode for one exact Supabase Multi target."""
+    if _use_headless_backend():
+        return execute_project_sql_headless(target, query, read_only=True)
     return _api("/api/sql-query", {"project": target, "query": query})
 
 
@@ -286,8 +302,11 @@ def query_sql(target: str, query: str) -> dict[str, Any]:
 def execute_sql(target: str, query: str, confirm: bool = False) -> dict[str, Any]:
     """Run SQL that may write to the database. Requires explicit confirm=true and refuses targets configured read-only."""
     _require_confirmation(confirm, f"Executing write-capable SQL on '{target}'")
-    return _api("/api/sql-execute", {"project": target, "query": query, "confirm": True})
 
+    if _use_headless_backend():
+        return execute_project_sql_headless(target, query, read_only=False)
+
+    return _api("/api/sql-execute", {"project": target, "query": query, "confirm": True})
 
 @mcp.tool()
 def sync_mcp() -> dict[str, Any]:
