@@ -68,6 +68,20 @@ The gateway schema is intentionally stable. New operations can be added to the l
 
 Write-capable live operations still require `confirm=true`, and all existing target/read-only/PAT safety rules remain enforced downstream.
 
+
+### Edge Functions through the live gateway
+
+The live capability registry also exposes:
+
+- `list_edge_functions(target)`
+- `get_edge_function(target, function_slug)`
+- `deploy_edge_function(target, name, files, entrypoint_path, verify_jwt, import_map_path?)`
+- `delete_edge_function(target, function_slug)`
+
+List, get, and deploy are proxied to the official project-scoped Supabase MCP. Delete uses the Supabase Management API because the official Supabase MCP currently exposes no `delete_edge_function` tool.
+
+Read operations require the PAT's Edge Functions read permission. Deploy/delete require Edge Functions read-write permission, explicit `confirm=true`, and a Supabase Multi target that is not configured read-only.
+
 ## Local-first runtime and optional headless backend
 
 The normal Windows runtime remains local-first:

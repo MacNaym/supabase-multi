@@ -96,7 +96,11 @@ def test_live_capabilities_advertise_sql_operations(monkeypatch):
     names = {item["operation"] for item in caps["capabilities"]}
     assert "query_sql" in names
     assert "execute_sql" in names
-    assert caps["generation"] == "2026-11-11.2"
+    assert "list_edge_functions" in names
+    assert "get_edge_function" in names
+    assert "deploy_edge_function" in names
+    assert "delete_edge_function" in names
+    assert caps["generation"] == "2026-11-12.1"
     assert caps["runtime"]["control_plane_current"] is True
 
 
@@ -132,6 +136,31 @@ def test_live_gateway_requires_confirmation_for_write(monkeypatch):
         module._invoke_live_capability(
             "execute_sql",
             {"target": "example-prod", "query": "update t set x=1"},
+            confirm=False,
+        )
+
+
+def test_edge_function_writes_require_confirmation():
+    module = load_module()
+
+    with pytest.raises(RuntimeError, match="confirm=true"):
+        module._invoke_live_capability(
+            "deploy_edge_function",
+            {
+                "target": "example-prod",
+                "name": "hello-world",
+                "files": [{"name": "index.ts", "content": "Deno.serve(() => new Response())"}],
+            },
+            confirm=False,
+        )
+
+    with pytest.raises(RuntimeError, match="confirm=true"):
+        module._invoke_live_capability(
+            "delete_edge_function",
+            {
+                "target": "example-prod",
+                "function_slug": "hello-world",
+            },
             confirm=False,
         )
 

@@ -10,6 +10,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Portable headless control-plane backend for MCP-only operation, separate from the Windows desktop control plane.
 - Optional Streamable HTTP transport for advanced/remote MCP deployment while preserving stdio as the local default.
 - Stable `get_capabilities` / `invoke_capability` live gateway for clients with stale MCP tool metadata.
+- Edge Function live capabilities for list/get/deploy through the official Supabase MCP and delete through the documented Management API endpoint.
 - Real MCP stdio startup/initialize/tool-discovery regression test.
 - Codex integration and Secure MCP Tunnel documentation.
 - `query_sql` read-only SQL proxy through the official Supabase MCP.

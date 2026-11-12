@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -53,7 +54,32 @@ def write_registry(reg: dict[str, Any]) -> None:
 def read_token_env_value(name: str) -> str:
     if not name:
         return ""
-    return os.environ.get(name, "").strip()
+
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+
+    # Windows user-scoped variables created with setx are not injected into
+    # an already-running Python process. Read them directly when necessary.
+    if os.name == "nt":
+        try:
+            proc = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    f"[Environment]::GetEnvironmentVariable('{name}','User')",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if proc.returncode == 0:
+                return (proc.stdout or "").strip()
+        except Exception:
+            pass
+
+    return ""
 
 
 def _http_json(
@@ -68,6 +94,7 @@ def _http_json(
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
+        "User-Agent": MCP_USER_AGENT,
     }
 
     if payload is not None:
@@ -456,6 +483,250 @@ def _mcp_text_content(result: Any) -> str:
             texts.append(str(item.get("text", "")))
 
     return "\n".join(x for x in texts if x)
+
+
+
+def _project_credentials(
+    project_name: str,
+    *,
+    write: bool = False,
+) -> tuple[str, str, dict[str, Any]]:
+    project_name = (project_name or "").strip()
+    if not project_name:
+        raise ValueError("Project target is required.")
+
+    reg = read_registry()
+    project = reg.get("projects", {}).get(project_name)
+
+    if not project:
+        raise ValueError("Project not found.")
+    if not project.get("enabled", True):
+        raise ValueError("Project target is disabled.")
+    if write and bool(project.get("read_only", False)):
+        raise ValueError("Project target is configured read-only; writes are blocked.")
+
+    project_ref = str(project.get("project_ref") or "").strip()
+    token_env = str(project.get("token_env") or "").strip()
+
+    if not project_ref:
+        raise ValueError("Project ref is not configured.")
+    if not token_env:
+        raise ValueError("Project token_env is not configured.")
+
+    token = read_token_env_value(token_env)
+    if not token:
+        raise ValueError(f"No PAT found in environment variable {token_env}.")
+
+    return project_ref, token, project
+
+
+def call_project_mcp_tool(
+    project_name: str,
+    tool_name: str,
+    arguments: dict[str, Any] | None = None,
+    *,
+    write: bool = False,
+) -> dict[str, Any]:
+    project_ref, token, _project = _project_credentials(project_name, write=write)
+
+    params: dict[str, str] = {"project_ref": project_ref}
+    if not write:
+        params["read_only"] = "true"
+
+    endpoint = MCP_URL + "?" + urllib.parse.urlencode(params)
+
+    init, sid, init_meta = mcp_post(
+        token,
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "supabase-multi-edge-proxy",
+                    "version": "0.3",
+                },
+            },
+        },
+        endpoint=endpoint,
+        return_meta=True,
+    )
+
+    if init_meta["status"] >= 400 or _mcp_error_message(init):
+        raise RuntimeError(
+            "Supabase MCP initialize failed: "
+            + _mcp_phase_error("initialize", init, init_meta)
+        )
+
+    negotiated = str(
+        ((init or {}).get("result") or {}).get("protocolVersion")
+        or MCP_PROTOCOL_VERSION
+    )
+    if negotiated != MCP_PROTOCOL_VERSION:
+        raise RuntimeError(
+            "Supabase MCP negotiated an unsupported protocol version: "
+            + negotiated
+        )
+
+    initialized, sid, initialized_meta = mcp_post(
+        token,
+        {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {},
+        },
+        sid,
+        endpoint=endpoint,
+        protocol_version=negotiated,
+        return_meta=True,
+    )
+
+    if initialized_meta["status"] != 202:
+        raise RuntimeError(
+            "Supabase MCP notifications/initialized failed: "
+            + _mcp_phase_error(
+                "notifications/initialized",
+                initialized,
+                initialized_meta,
+            )
+        )
+
+    payload, sid, tool_meta = mcp_post(
+        token,
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": arguments or {},
+            },
+        },
+        sid,
+        endpoint=endpoint,
+        protocol_version=negotiated,
+        return_meta=True,
+    )
+
+    msg = _mcp_error_message(payload)
+    if tool_meta["status"] >= 400 or msg:
+        raise RuntimeError(
+            f"Supabase MCP {tool_name} failed: "
+            + _mcp_phase_error("tools/call", payload, tool_meta)
+        )
+
+    result = (payload or {}).get("result", {}) or {}
+    if result.get("isError"):
+        detail = _mcp_text_content(result) or f"Supabase MCP {tool_name} returned an error."
+        raise RuntimeError(detail)
+
+    return {
+        "project": project_name,
+        "project_ref": project_ref,
+        "source": "official-supabase-mcp",
+        "tool": tool_name,
+        "content": result.get("content", []),
+        "structured_content": result.get("structuredContent"),
+        "mcp_transport": {
+            "negotiated_protocol_version": negotiated,
+            "initialize": init_meta,
+            "notifications_initialized": initialized_meta,
+            "tools_call": tool_meta,
+        },
+    }
+
+
+def list_edge_functions(project_name: str) -> dict[str, Any]:
+    return call_project_mcp_tool(
+        project_name,
+        "list_edge_functions",
+        {},
+        write=False,
+    )
+
+
+def get_edge_function(project_name: str, function_slug: str) -> dict[str, Any]:
+    function_slug = (function_slug or "").strip()
+    if not function_slug:
+        raise ValueError("function_slug is required.")
+
+    return call_project_mcp_tool(
+        project_name,
+        "get_edge_function",
+        {"function_slug": function_slug},
+        write=False,
+    )
+
+
+def deploy_edge_function(
+    project_name: str,
+    name: str,
+    files: list[dict[str, str]],
+    *,
+    entrypoint_path: str = "index.ts",
+    verify_jwt: bool = True,
+    import_map_path: str | None = None,
+) -> dict[str, Any]:
+    name = (name or "").strip()
+    entrypoint_path = (entrypoint_path or "index.ts").strip()
+
+    if not name:
+        raise ValueError("Edge Function name is required.")
+    if not isinstance(files, list) or not files:
+        raise ValueError("Edge Function files must be a non-empty list.")
+
+    normalized_files: list[dict[str, str]] = []
+    for item in files:
+        if not isinstance(item, dict):
+            raise ValueError("Each Edge Function file must be an object.")
+        file_name = str(item.get("name") or "").strip()
+        content = item.get("content")
+        if not file_name or not isinstance(content, str):
+            raise ValueError("Each Edge Function file requires name and string content.")
+        normalized_files.append({"name": file_name, "content": content})
+
+    arguments: dict[str, Any] = {
+        "name": name,
+        "entrypoint_path": entrypoint_path,
+        "files": normalized_files,
+        "verify_jwt": bool(verify_jwt),
+    }
+    if import_map_path:
+        arguments["import_map_path"] = str(import_map_path).strip()
+
+    return call_project_mcp_tool(
+        project_name,
+        "deploy_edge_function",
+        arguments,
+        write=True,
+    )
+
+
+def delete_edge_function(project_name: str, function_slug: str) -> dict[str, Any]:
+    function_slug = (function_slug or "").strip()
+    if not function_slug:
+        raise ValueError("function_slug is required.")
+
+    project_ref, token, _project = _project_credentials(project_name, write=True)
+    url = (
+        f"{MANAGEMENT_URL}/projects/"
+        + urllib.parse.quote(project_ref, safe="")
+        + "/functions/"
+        + urllib.parse.quote(function_slug, safe="")
+    )
+
+    result = _http_json(url, token, method="DELETE")
+
+    return {
+        "project": project_name,
+        "project_ref": project_ref,
+        "function_slug": function_slug,
+        "source": "supabase-management-api",
+        "deleted": True,
+        "result": result,
+    }
 
 
 def execute_project_sql(
