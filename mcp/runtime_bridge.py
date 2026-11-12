@@ -22,7 +22,7 @@ from runtime_identity import runtime_payload, source_fingerprint
 
 CONTROL_PLANE = ROOT / "local-ui" / "server.py"
 BASE_URL = os.environ.get("SUPABASE_MULTI_URL", "http://127.0.0.1:8765").rstrip("/")
-LIVE_CAPABILITY_GENERATION = "2026-11-11.2"
+LIVE_CAPABILITY_GENERATION = "2026-11-12.1"
 
 LIVE_CAPABILITIES: dict[str, dict[str, Any]] = {
     "query_sql": {
@@ -32,6 +32,26 @@ LIVE_CAPABILITIES: dict[str, dict[str, Any]] = {
     },
     "execute_sql": {
         "description": "Run write-capable SQL through the official Supabase MCP.",
+        "confirmation_required": True,
+        "write_capable": True,
+    },
+    "list_edge_functions": {
+        "description": "List Edge Functions through the official Supabase MCP.",
+        "confirmation_required": False,
+        "write_capable": False,
+    },
+    "get_edge_function": {
+        "description": "Retrieve one Edge Function and its files through the official Supabase MCP.",
+        "confirmation_required": False,
+        "write_capable": False,
+    },
+    "deploy_edge_function": {
+        "description": "Deploy or replace an Edge Function through the official Supabase MCP.",
+        "confirmation_required": True,
+        "write_capable": True,
+    },
+    "delete_edge_function": {
+        "description": "Delete an Edge Function through the Supabase Management API.",
         "confirmation_required": True,
         "write_capable": True,
     },
@@ -227,5 +247,52 @@ def invoke_live_capability(
         if not target or not query.strip():
             raise RuntimeError("execute_sql requires arguments.target and arguments.query.")
         return api("/api/sql-execute", {"project": target, "query": query, "confirm": True})
+
+    if operation == "list_edge_functions":
+        target = str(arguments.get("target") or "").strip()
+        if not target:
+            raise RuntimeError("list_edge_functions requires arguments.target.")
+        return _headless_module().list_edge_functions(target)
+
+    if operation == "get_edge_function":
+        target = str(arguments.get("target") or "").strip()
+        function_slug = str(arguments.get("function_slug") or "").strip()
+        if not target or not function_slug:
+            raise RuntimeError(
+                "get_edge_function requires arguments.target and arguments.function_slug."
+            )
+        return _headless_module().get_edge_function(target, function_slug)
+
+    if operation == "deploy_edge_function":
+        _require_confirmation(confirm, "Deploying an Edge Function through the live capability gateway")
+        target = str(arguments.get("target") or "").strip()
+        name = str(arguments.get("name") or "").strip()
+        files = arguments.get("files")
+        if not target or not name or not isinstance(files, list) or not files:
+            raise RuntimeError(
+                "deploy_edge_function requires arguments.target, arguments.name, and non-empty arguments.files."
+            )
+        return _headless_module().deploy_edge_function(
+            target,
+            name,
+            files,
+            entrypoint_path=str(arguments.get("entrypoint_path") or "index.ts"),
+            verify_jwt=bool(arguments.get("verify_jwt", True)),
+            import_map_path=(
+                str(arguments.get("import_map_path")).strip()
+                if arguments.get("import_map_path")
+                else None
+            ),
+        )
+
+    if operation == "delete_edge_function":
+        _require_confirmation(confirm, "Deleting an Edge Function through the live capability gateway")
+        target = str(arguments.get("target") or "").strip()
+        function_slug = str(arguments.get("function_slug") or "").strip()
+        if not target or not function_slug:
+            raise RuntimeError(
+                "delete_edge_function requires arguments.target and arguments.function_slug."
+            )
+        return _headless_module().delete_edge_function(target, function_slug)
 
     raise RuntimeError(f"Live capability '{operation}' is advertised but not implemented.")
