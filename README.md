@@ -1017,6 +1017,15 @@ Returns the live server-side capability registry and generation. Useful when a c
 ### `invoke_capability`
 Invokes one operation advertised by `get_capabilities` through a server-side whitelist. Write-capable operations still require explicit confirmation.
 
+Current live capabilities include SQL plus Edge Functions:
+
+- `list_edge_functions`
+- `get_edge_function`
+- `deploy_edge_function`
+- `delete_edge_function`
+
+The first three proxy the official Supabase MCP. Supabase does not currently expose an official MCP delete-function tool, so `delete_edge_function` uses the documented Supabase Management API delete endpoint with the same project-scoped PAT. Deploy/delete require `confirm=true` and refuse Supabase Multi targets configured read-only.
+
 ### `list_orphaned_secrets`
 Returns orphaned environment-variable names only.
 
