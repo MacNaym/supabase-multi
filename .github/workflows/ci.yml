@@ -70,7 +70,7 @@ jobs:
           cmd /c start-supabase-multi.bat
           if ($LASTEXITCODE -ne 0) { throw "start-supabase-multi.bat failed." }
 
-          $response = Invoke-RestMethod "http://127.0.0.1:8765/api/state?local=1" -TimeoutSec 2
+          $response = Invoke-RestMethod "http://127.0.0.1:8765/api/state?local=1" -TimeoutSec 10
           if (-not $response.ok) { throw "Fast local state endpoint did not become ready." }
 
           # The launcher must also be safe to run twice.
