@@ -1342,6 +1342,9 @@ class Handler(SimpleHTTPRequestHandler):
                 job_id=start_backup_job(project,body["account"].strip(),mode,destination,p.get("project_ref"))
                 self.send_json({"ok":True,"job_id":job_id},202);return
             if path=="/api/backup-create":
+                job=backup_job_snapshot()
+                if job and job["status"] in {"queued","running"}:
+                    raise ValueError("A dashboard backup is already in progress.")
                 reg=read_registry()
                 project,p=validate_backup_selection(reg,body)
                 mode=(body.get("mode") or "full").strip().lower()
