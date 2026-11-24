@@ -111,3 +111,5 @@ Initial public pre-release.
 - Diagnostics and orphaned-secret detection.
 
 <!-- End of changelog -->
+
+- 3.10.1-dev: Backup & Restore sub-tabs, concise validation, explicit source selection instead of automatically reimporting recent external backups, local pinned Docker image discovery and improved bilingual controls. Remote restore remains disabled.
