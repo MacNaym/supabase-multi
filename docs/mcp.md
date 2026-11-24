@@ -82,6 +82,30 @@ List, get, and deploy are proxied to the official project-scoped Supabase MCP. D
 
 Read operations require the PAT's Edge Functions read permission. Deploy/delete require Edge Functions read-write permission, explicit `confirm=true`, and a Supabase Multi target that is not configured read-only.
 
+
+## Database backup V1 through the live gateway
+
+The live registry exposes:
+
+- `backup_database(target, mode="full", destination?, db_url_env?)`
+- `verify_database_backup(path)`
+
+Backup modes are `schema`, `data`, and `full`. Full mode creates `roles.sql`, `schema.sql`, and `data.sql`, plus a `manifest.json` containing file sizes and SHA-256 hashes.
+
+Backups use the current Supabase CLI `db dump --remote=...` flow. Supabase Multi never stores or returns the database connection string. It resolves the connection-string environment variable in this order:
+
+1. explicit `db_url_env` argument;
+2. project `db_url_env` in `registry.json`;
+3. derived name `SUPABASE_DB_URL_<TARGET>`.
+
+For example, `example-prod` defaults to `SUPABASE_DB_URL_EXAMPLE_PROD`.
+
+The default local destination is `~/SupabaseMultiBackups/<target>/<UTC timestamp>/`. Set `SUPABASE_MULTI_BACKUP_DIR` to change the default root, or pass `destination` for one call.
+
+Database backups do not include the actual files stored through Supabase Storage; they cover the logical Postgres database. Storage-object backup is intentionally outside V1.
+
+`verify_database_backup` recomputes sizes and SHA-256 hashes and reports any missing or modified file.
+
 ## Local-first runtime and optional headless backend
 
 The normal Windows runtime remains local-first:

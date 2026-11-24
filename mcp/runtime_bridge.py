@@ -22,9 +22,19 @@ from runtime_identity import runtime_payload, source_fingerprint
 
 CONTROL_PLANE = ROOT / "local-ui" / "server.py"
 BASE_URL = os.environ.get("SUPABASE_MULTI_URL", "http://127.0.0.1:8765").rstrip("/")
-LIVE_CAPABILITY_GENERATION = "2026-11-12.1"
+LIVE_CAPABILITY_GENERATION = "2026-11-24.1"
 
 LIVE_CAPABILITIES: dict[str, dict[str, Any]] = {
+    "backup_database": {
+        "description": "Create a logical Supabase database backup using the Supabase CLI.",
+        "confirmation_required": False,
+        "write_capable": False,
+    },
+    "verify_database_backup": {
+        "description": "Verify a Supabase Multi backup manifest, file sizes, and SHA-256 hashes.",
+        "confirmation_required": False,
+        "write_capable": False,
+    },
     "query_sql": {
         "description": "Run SQL through the official Supabase MCP in forced read-only mode.",
         "confirmation_required": False,
@@ -232,6 +242,31 @@ def invoke_live_capability(
             f"Unknown live capability '{operation}'. Call get_capabilities first and use one of the advertised operations."
         )
     arguments = arguments or {}
+
+    if operation == "backup_database":
+        target = str(arguments.get("target") or "").strip()
+        if not target:
+            raise RuntimeError("backup_database requires arguments.target.")
+        return _headless_module().backup_database(
+            target,
+            mode=str(arguments.get("mode") or "full"),
+            destination=(
+                str(arguments.get("destination")).strip()
+                if arguments.get("destination")
+                else None
+            ),
+            db_url_env=(
+                str(arguments.get("db_url_env")).strip()
+                if arguments.get("db_url_env")
+                else None
+            ),
+        )
+
+    if operation == "verify_database_backup":
+        path = str(arguments.get("path") or "").strip()
+        if not path:
+            raise RuntimeError("verify_database_backup requires arguments.path.")
+        return _headless_module().verify_database_backup(path)
 
     if operation == "query_sql":
         target = str(arguments.get("target") or "").strip()

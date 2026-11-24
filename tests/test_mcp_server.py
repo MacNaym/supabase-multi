@@ -94,13 +94,15 @@ def test_live_capabilities_advertise_sql_operations(monkeypatch):
     caps = module.get_capabilities()
 
     names = {item["operation"] for item in caps["capabilities"]}
+    assert "backup_database" in names
+    assert "verify_database_backup" in names
     assert "query_sql" in names
     assert "execute_sql" in names
     assert "list_edge_functions" in names
     assert "get_edge_function" in names
     assert "deploy_edge_function" in names
     assert "delete_edge_function" in names
-    assert caps["generation"] == "2026-11-12.1"
+    assert caps["generation"] == "2026-11-24.1"
     assert caps["runtime"]["control_plane_current"] is True
 
 

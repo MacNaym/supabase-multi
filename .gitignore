@@ -47,3 +47,6 @@ release/
 mcp/generated/
 
 gitleaks-report.json
+
+# Local database backups
+backups/

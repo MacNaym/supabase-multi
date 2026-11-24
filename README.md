@@ -1017,14 +1017,25 @@ Returns the live server-side capability registry and generation. Useful when a c
 ### `invoke_capability`
 Invokes one operation advertised by `get_capabilities` through a server-side whitelist. Write-capable operations still require explicit confirmation.
 
-Current live capabilities include SQL plus Edge Functions:
+Current live capabilities include SQL, Edge Functions, and database backups:
 
 - `list_edge_functions`
 - `get_edge_function`
 - `deploy_edge_function`
 - `delete_edge_function`
+- `backup_database`
+- `verify_database_backup`
 
 The first three proxy the official Supabase MCP. Supabase does not currently expose an official MCP delete-function tool, so `delete_edge_function` uses the documented Supabase Management API delete endpoint with the same project-scoped PAT. Deploy/delete require `confirm=true` and refuse Supabase Multi targets configured read-only.
+
+### `backup_database` / `verify_database_backup`
+Creates and verifies local logical Postgres backups without adding static MCP tool schemas.
+
+`backup_database` supports `schema`, `data`, and `full` modes. Full mode writes roles, schema, data, and a manifest with SHA-256 hashes. It uses the Supabase CLI `db dump --remote=...` flow and reads the database connection string from an environment variable; raw connection strings are never stored in the registry or returned to agents.
+
+Connection-string environment resolution is: explicit `db_url_env` argument, project `db_url_env`, then `SUPABASE_DB_URL_<TARGET>`. The default backup root is `~/SupabaseMultiBackups`, overridable with `SUPABASE_MULTI_BACKUP_DIR` or a per-call destination.
+
+These backups do not include the actual objects stored through Supabase Storage.
 
 ### `list_orphaned_secrets`
 Returns orphaned environment-variable names only.

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
+import shutil
 import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +21,7 @@ MANAGEMENT_URL = "https://api.supabase.com/v1"
 DEFAULT_FEATURES = "database"
 MCP_PROTOCOL_VERSION = "2025-06-18"
 MCP_USER_AGENT = "Supabase-Multi/0.2"
+DEFAULT_BACKUP_ROOT = Path(os.environ.get("SUPABASE_MULTI_BACKUP_DIR", Path.home() / "SupabaseMultiBackups"))
 
 
 def read_registry() -> dict[str, Any]:
@@ -726,6 +731,261 @@ def delete_edge_function(project_name: str, function_slug: str) -> dict[str, Any
         "source": "supabase-management-api",
         "deleted": True,
         "result": result,
+    }
+
+
+
+def _safe_backup_name(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", (value or "").strip()).strip("-._")
+    return cleaned or "project"
+
+
+def _backup_source(
+    project_name: str,
+    db_url_env: str | None = None,
+) -> tuple[str, str, str, dict[str, Any]]:
+    project_name = (project_name or "").strip()
+    if not project_name:
+        raise ValueError("Project target is required.")
+
+    reg = read_registry()
+    project = reg.get("projects", {}).get(project_name)
+    if not project:
+        raise ValueError("Project not found.")
+    if not project.get("enabled", True):
+        raise ValueError("Project target is disabled.")
+
+    project_ref = str(project.get("project_ref") or "").strip()
+    if not project_ref:
+        raise ValueError("Project ref is not configured.")
+
+    derived_env = "SUPABASE_DB_URL_" + re.sub(
+        r"[^A-Za-z0-9]+", "_", project_name.upper()
+    ).strip("_")
+    env_name = (
+        str(db_url_env or "").strip()
+        or str(project.get("db_url_env") or "").strip()
+        or derived_env
+    )
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_name):
+        raise ValueError("db_url_env must be a valid environment-variable name.")
+    db_url = read_token_env_value(env_name)
+    if not db_url:
+        raise ValueError(
+            f"No database connection string found in environment variable {env_name}."
+        )
+
+    return project_ref, env_name, db_url, project
+
+
+def _supabase_cli() -> str:
+    cli = shutil.which("supabase")
+    if not cli:
+        raise RuntimeError(
+            "Supabase CLI was not found on PATH. Install it or add it to PATH before creating backups."
+        )
+    return cli
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _run_backup_dump(cli: str, db_url: str, output: Path, extra_args: list[str]) -> None:
+    command = [
+        cli,
+        "db",
+        "dump",
+        f"--remote={db_url}",
+        "-f",
+        str(output),
+        *extra_args,
+    ]
+    proc = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=3600,
+    )
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "Supabase CLI db dump failed.").strip()
+        # Avoid reflecting a credential-bearing connection string in errors.
+        detail = detail.replace(db_url, "[REDACTED_DB_URL]")
+        raise RuntimeError(detail)
+    if not output.exists():
+        raise RuntimeError(f"Supabase CLI reported success but did not create {output.name}.")
+
+
+def backup_database(
+    project_name: str,
+    *,
+    mode: str = "full",
+    destination: str | None = None,
+    db_url_env: str | None = None,
+) -> dict[str, Any]:
+    mode = (mode or "full").strip().lower()
+    if mode not in {"full", "schema", "data"}:
+        raise ValueError("mode must be one of: full, schema, data.")
+
+    project_ref, env_name, db_url, _project = _backup_source(
+        project_name,
+        db_url_env=db_url_env,
+    )
+    cli = _supabase_cli()
+
+    root = Path(destination).expanduser() if destination else DEFAULT_BACKUP_ROOT
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%fZ")
+    backup_dir = root / _safe_backup_name(project_name) / timestamp
+    backup_dir.mkdir(parents=True, exist_ok=False)
+
+    jobs: list[tuple[str, list[str]]] = []
+    if mode == "full":
+        jobs.append(("roles.sql", ["--role-only"]))
+    if mode in {"full", "schema"}:
+        jobs.append(("schema.sql", []))
+    if mode in {"full", "data"}:
+        jobs.append(
+            (
+                "data.sql",
+                [
+                    "--data-only",
+                    "--use-copy",
+                    "-x",
+                    "storage.buckets_vectors",
+                    "-x",
+                    "storage.vector_indexes",
+                ],
+            )
+        )
+
+    try:
+        for file_name, args in jobs:
+            _run_backup_dump(cli, db_url, backup_dir / file_name, args)
+
+        files = []
+        for file_name, _args in jobs:
+            path = backup_dir / file_name
+            files.append(
+                {
+                    "name": file_name,
+                    "bytes": path.stat().st_size,
+                    "sha256": _sha256_file(path),
+                }
+            )
+
+        version_proc = subprocess.run(
+            [cli, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        cli_version = (
+            (version_proc.stdout or version_proc.stderr or "").strip()
+            if version_proc.returncode == 0
+            else "unknown"
+        )
+
+        manifest = {
+            "format": "supabase-multi-backup-v1",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "project": project_name,
+            "project_ref": project_ref,
+            "mode": mode,
+            "db_url_env": env_name,
+            "supabase_cli_version": cli_version,
+            "files": files,
+        }
+        manifest_path = backup_dir / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    except Exception:
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        raise
+
+    return {
+        "project": project_name,
+        "project_ref": project_ref,
+        "mode": mode,
+        "backup_dir": str(backup_dir),
+        "manifest": str(manifest_path),
+        "db_url_env": env_name,
+        "files": files,
+        "verified": True,
+        "source": "supabase-cli",
+    }
+
+
+def verify_database_backup(path: str) -> dict[str, Any]:
+    raw_path = (path or "").strip()
+    if not raw_path:
+        raise ValueError("Backup path is required.")
+
+    candidate = Path(raw_path).expanduser()
+    manifest_path = candidate if candidate.name.lower() == "manifest.json" else candidate / "manifest.json"
+    if not manifest_path.is_file():
+        raise ValueError("manifest.json was not found in the backup path.")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("format") != "supabase-multi-backup-v1":
+        raise ValueError("Unsupported backup manifest format.")
+
+    backup_dir = manifest_path.parent.resolve()
+    checks = []
+    all_ok = True
+
+    manifest_files = manifest.get("files")
+    if not isinstance(manifest_files, list) or not manifest_files:
+        raise ValueError("Backup manifest contains no files.")
+
+    for item in manifest_files:
+        if not isinstance(item, dict):
+            raise ValueError("Backup manifest contains an invalid file entry.")
+        name = str(item.get("name") or "").strip()
+        if not name:
+            all_ok = False
+            checks.append({"name": name, "ok": False, "error": "Missing file name."})
+            continue
+
+        file_path = (backup_dir / name).resolve()
+        if file_path.parent != backup_dir:
+            all_ok = False
+            checks.append({"name": name, "ok": False, "error": "Unsafe manifest path."})
+            continue
+        if not file_path.is_file():
+            all_ok = False
+            checks.append({"name": name, "ok": False, "error": "File missing."})
+            continue
+
+        actual_size = file_path.stat().st_size
+        actual_hash = _sha256_file(file_path)
+        expected_size = int(item.get("bytes", -1))
+        expected_hash = str(item.get("sha256") or "")
+        ok = actual_size == expected_size and actual_hash == expected_hash
+        all_ok = all_ok and ok
+        checks.append(
+            {
+                "name": name,
+                "ok": ok,
+                "bytes": actual_size,
+                "sha256": actual_hash,
+            }
+        )
+
+    return {
+        "ok": all_ok,
+        "format": manifest.get("format"),
+        "project": manifest.get("project"),
+        "project_ref": manifest.get("project_ref"),
+        "mode": manifest.get("mode"),
+        "backup_dir": str(backup_dir),
+        "manifest": str(manifest_path),
+        "files": checks,
     }
 
 
