@@ -181,3 +181,17 @@ CREATE FUNCTION public.restore_increment(value integer) RETURNS integer LANGUAGE
     assert report["inventory"]["constraints"] >= 2
     assert report["inventory"]["rls_tables"] >= 1
     assert report["inventory"]["policies"] >= 1
+
+
+def test_copy_requirements_skips_payload(tmp_path):
+    path=tmp_path/"data.sql"
+    path.write_text('COPY "auth"."audit_log_entries" ("id", "ip_address") FROM stdin;\nCOPY fake.payload (x) FROM stdin;\n\\.\n',encoding="utf-8")
+    assert engine.copy_requirements(path)=={("auth","audit_log_entries","id"),("auth","audit_log_entries","ip_address")}
+    assert engine.compare_copy_columns(engine.copy_requirements(path),[["auth","audit_log_entries","id"]])==[("auth","audit_log_entries","ip_address")]
+
+
+def test_copy_requirements_rejects_truncation(tmp_path):
+    path=tmp_path/"data.sql"
+    path.write_text("COPY public.example (id) FROM stdin;\n1\n",encoding="utf-8")
+    with pytest.raises(ValueError,match="Unterminated"):
+        engine.copy_requirements(path)
