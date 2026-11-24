@@ -908,7 +908,13 @@ def backup_database(
     *,
     mode: str = "full",
     destination: str | None = None,
+    progress=None,
 ) -> dict[str, Any]:
+    def emit(phase, **details):
+        if progress is not None:
+            progress(phase, **details)
+
+    emit("preflight")
     mode = (mode or "full").strip().lower()
     if mode not in {"full", "schema", "data"}:
         raise ValueError("mode must be one of: full, schema, data.")
@@ -957,10 +963,12 @@ def backup_database(
     pooler_url = ""
     db_password = ""
     try:
+        emit("connection", folder=str(backup_dir))
         if connection_mode == "session-pooler":
             pooler_url = _backup_pooler_url(project_ref, access_token, read_token_env_value(password_env))
             credential_mode = "session-pooler"
         for file_name, args in jobs:
+            emit(file_name.split(".")[0], connection="session-pooler" if pooler_url else "direct")
             if pooler_url:
                 _run_backup_dump(cli, project_ref, access_token, backup_dir / file_name, args, pooler_url=pooler_url)
                 continue
@@ -988,8 +996,10 @@ def backup_database(
                 # an optional fallback for environments where temporary login fails.
                 detail = str(first_error).lower()
                 if connection_mode == "auto" and "ipv6 is not supported" in detail:
+                    emit("pooler", connection="session-pooler")
                     pooler_url = _backup_pooler_url(project_ref, access_token, read_token_env_value(password_env))
                     credential_mode = "session-pooler"
+                    emit(file_name.split(".")[0], connection="session-pooler")
                     _run_backup_dump(cli, project_ref, access_token, backup_dir / file_name, args, pooler_url=pooler_url)
                     continue
                 if not any(marker in detail for marker in ("temporary login", "temporary role", "password authentication failed", "28p01", "database_write")):
@@ -1010,6 +1020,7 @@ def backup_database(
                     db_password=db_password,
                 )
 
+        emit("manifest")
         files = []
         for file_name, _args in jobs:
             path = backup_dir / file_name
@@ -1050,6 +1061,10 @@ def backup_database(
             json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
+        emit("verify")
+        if not verify_database_backup(str(backup_dir))["ok"]:
+            raise RuntimeError("Backup integrity verification failed.")
+        emit("complete")
     except Exception:
         shutil.rmtree(backup_dir, ignore_errors=True)
         raise
