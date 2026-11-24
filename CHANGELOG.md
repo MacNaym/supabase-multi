@@ -115,3 +115,5 @@ Initial public pre-release.
 - 3.10.1-dev: Backup & Restore sub-tabs, concise validation, explicit source selection instead of automatically reimporting recent external backups, local pinned Docker image discovery and improved bilingual controls. Remote restore remains disabled.
 
 - 3.10.1-dev UX follow-up: direct history-to-restore selection, Docker image tags with pinned digest, contextual help for source and image selection.
+
+- 3.10.1-dev: derive source PostgreSQL version from dump headers, record it in new manifests, automatically select a local image matching major/minor with latest available build; manual override in advanced settings. Unknown source versions and missing matching images require manual review; no automatic download or compatibility guarantee.
