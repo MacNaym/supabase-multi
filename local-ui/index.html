@@ -177,6 +177,13 @@
           <span id="backupCredentialHint" class="muted" data-i18n="backup_credential_hint">Uses project ref + project PAT. Database password is only a fallback.</span>
         </div>
 
+        <section id="backupProgressPanel" class="dashboard-section hidden" aria-live="polite">
+          <h3 id="backupProgressTitle">Backup progress</h3>
+          <progress id="backupProgressBar" max="7" value="0" style="width:100%"></progress>
+          <p id="backupProgressPhase"></p>
+          <p id="backupProgressStats" class="muted"></p>
+          <p id="backupProgressStatus"></p>
+        </section>
         <section class="dashboard-section">
           <div class="section-head">
             <div><h3 data-i18n="backup_history">Backup history</h3><p id="backupRootHint" class="muted">—</p></div>
