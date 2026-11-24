@@ -36,6 +36,27 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-11-24
+
+### Added
+- Backup & Restore module 1.5.0 with strict full/schema/data manifest inventory, SHA-256 and byte-size checks, structural SQL-dump heuristics, and explicit integrity/structure/restoreability reporting.
+- Read-only in-place external backup import through the dashboard and live MCP capability gateway; it does not copy or execute SQL.
+- Disposable local restore test using an already-installed official Supabase PostgreSQL digest, Docker network isolation, no published ports or host mounts, ordered roles/schema/data execution, timeout handling, cleanup, and inventory reporting.
+- Remote destination planning and read-only TLS preflight guards for exact explicitly enabled non-production targets. Remote restore execution remains disabled.
+- `--no-browser` launcher option and single-owner dashboard tab opening.
+
+### Fixed
+- Restore progress now exposes real restore subphases instead of one opaque restore stage.
+- The dashboard preserves visible backup/restore job state across browser refreshes while the local server remains running and rejects duplicate jobs.
+
+### Security
+- Local validation/import and report paths never return dump contents, PATs, database passwords, or credential-bearing URLs.
+- Remote restore planning rejects production, read-only, disabled, ambiguous, source-equals-destination, and non-opted-in targets before remote execution can be considered.
+
+### Verification
+- 80 automated tests passed with one opt-in Docker integration test skipped in the ordinary suite.
+- The disposable synthetic Docker restore was run three times using a pinned official Supabase PostgreSQL image; all runs restored data and protections and cleaned up.
+
 ### Added
 - Portable headless control-plane backend for MCP-only operation, separate from the Windows desktop control plane.
 - Optional Streamable HTTP transport for advanced/remote MCP deployment while preserving stdio as the local default.
@@ -89,7 +110,4 @@ Initial public pre-release.
 - Repository-to-project resolution.
 - Diagnostics and orphaned-secret detection.
 
-
-- 3.10.0 development B1: strict manifest inventory, local in-place import and non-executing structural validation with detailed report. Restore not implemented yet.
-
-- 3.10.0-dev: dashboard isolated restore job, progress, inventory and cleanup report; remote planning only, remote execution disabled.
+<!-- End of changelog -->

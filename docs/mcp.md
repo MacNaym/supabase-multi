@@ -83,13 +83,15 @@ List, get, and deploy are proxied to the official project-scoped Supabase MCP. D
 Read operations require the PAT's Edge Functions read permission. Deploy/delete require Edge Functions read-write permission, explicit `confirm=true`, and a Supabase Multi target that is not configured read-only.
 
 
-## Database backup V1.1 through the live gateway
+## Database backup and restore module 1.5 through the live gateway
 
 The live registry exposes:
 
 - `backup_database(target, mode="full", destination?)`
 - `list_database_backups(target, destination?)`
 - `verify_database_backup(path)`
+- `validate_database_backup(path)`
+- `import_database_backup(path)`
 
 Backup modes are `schema`, `data`, and `full`. Full mode creates `roles.sql`, `schema.sql`, and `data.sql`, plus a `manifest.json` containing file sizes and SHA-256 hashes.
 
@@ -106,9 +108,15 @@ The backup destination is resolved in this order:
 
 The local dashboard has a dedicated **Backup** view with project selection, backup mode, native Windows folder picker, per-project default destination, backup history, SHA-256 verification, and **Open folder**.
 
-Database backups do not include the actual files stored through Supabase Storage; they cover the logical Postgres database. Storage-object backup remains outside V1.1.
+Database backups do not include the actual files stored through Supabase Storage; they cover the logical Postgres database. They also do not necessarily include Supabase platform configuration, Auth state, Edge Functions, webhooks, cron jobs or external integrations.
 
 `verify_database_backup` recomputes sizes and SHA-256 hashes and reports any missing or modified file.
+
+`validate_database_backup` also performs non-executing, streaming SQL/dump-text checks. Its report distinguishes integrity, heuristic structure, and `restore_tested`; validation never executes SQL and cannot prove that a dump is safe or restorable. `import_database_backup` validates an external folder in place. It does not copy a dump, write the registry, persist SQL, or return credentials.
+
+The dashboard can run a local Test Restore only after the operator marks a full validated backup trusted and selects an already-installed official Supabase PostgreSQL image pinned by digest. The disposable container has network disabled, no published ports, no host bind mounts, and receives no host PAT or database password. It restores roles, schema, then data with `ON_ERROR_STOP`, cleans itself up, and reports tables, estimated rows, functions, constraints, extensions and RLS. This is a local, non-production test only.
+
+Remote restore execution is not a live capability in 3.10.0. Remote planning/preflight fails closed unless the destination resolves to one exact account/project/ref, is explicitly restore-enabled, is non-production, writable, and differs from the source. It does not make remote writes.
 
 ## Local-first runtime and optional headless backend
 

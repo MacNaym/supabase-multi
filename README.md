@@ -20,7 +20,7 @@
 
 # Supabase Multi
 
-Product version: the runtime reports the authoritative installed version (`runtime_identity.APP_VERSION`), shown in the dashboard and MCP. Backup feature revisions and the external Supabase CLI version are independent. Development branch 3.9.1 follows dashboard 3.9.0; CLI 3.3.0 was used in the first successful full backup test.
+Product version: the runtime reports the authoritative installed version (`runtime_identity.APP_VERSION`), shown in the dashboard and MCP. Supabase Multi **3.10.0** ships Backup & Restore module **1.5.0**. These are distinct from the installed Supabase CLI version and the upstream MCP protocol version.
 
 > **A local Supabase control plane for humans and AI agents managing multiple accounts and projects.**
 
@@ -614,6 +614,24 @@ Install the MCP SDK:
 
 The official MCP Python SDK documents the `mcp[cli]` extra for development and MCP Inspector support.
 
+## Upgrade and start
+
+From an existing checkout, update the selected branch, refresh the isolated MCP environment, then start the local control plane:
+
+```powershell
+git pull --ff-only
+.\setup.bat
+.\start-supabase-multi.bat
+```
+
+Use `--no-browser` for service-style starts, CI, or when you do not want the launcher to open a tab:
+
+```powershell
+.\start-supabase-multi.bat --no-browser
+```
+
+The launcher owns browser opening, so a normal start opens at most one dashboard tab. The dashboard binds only to `127.0.0.1:8765`.
+
 ## Automated verification
 
 GitHub Actions now verifies the public installation surface on Windows. CI:
@@ -1030,19 +1048,43 @@ Current live capabilities include SQL, Edge Functions, and database backups:
 - `backup_database`
 - `list_database_backups`
 - `verify_database_backup`
+- `validate_database_backup`
+- `import_database_backup`
 
 The first three proxy the official Supabase MCP. Supabase does not currently expose an official MCP delete-function tool, so `delete_edge_function` uses the documented Supabase Management API delete endpoint with the same project-scoped PAT. Deploy/delete require `confirm=true` and refuse Supabase Multi targets configured read-only.
 
-### `backup_database` / `verify_database_backup`
+### Backup validation, import and local restore
 Creates and verifies local logical Postgres backups without adding static MCP tool schemas.
 
-`backup_database` supports `schema`, `data`, and `full` modes. Full mode writes roles, schema, data, and a manifest with SHA-256 hashes. It uses the Supabase CLI `db dump --remote=...` flow and reads the database connection string from an environment variable; raw connection strings are never stored in the registry or returned to agents.
+`backup_database` supports `schema`, `data`, and `full` modes. Full mode writes roles, schema, data, and a manifest with SHA-256 hashes. It uses the Supabase CLI `db dump --remote=...` flow with the project PAT supplied only to the local subprocess through `SUPABASE_ACCESS_TOKEN`; raw connection strings are neither required nor stored in the registry or returned to agents.
 
 Backups target the configured `project_ref` directly with the Supabase CLI and pass the existing project PAT as `SUPABASE_ACCESS_TOKEN`, allowing the CLI to create a temporary database login. No database URL is required. If that flow fails, an optional password fallback is read from `SUPABASE_DB_PASSWORD_<TARGET>` or project `db_password_env`.
 
-The default backup root is the project `backup_dir` saved in the dashboard, then `SUPABASE_MULTI_BACKUP_DIR`, then `~/SupabaseMultiBackups`; a per-call destination can override all of them. The dashboard Backup view can choose a folder, save it per project, create backups, list history, verify SHA-256 hashes, and open the backup folder.
+The default backup root is the project `backup_dir` saved in the dashboard, then `SUPABASE_MULTI_BACKUP_DIR`, then `~/SupabaseMultiBackups`; a per-call destination can override all of them. The dashboard Backup view can choose a folder, save it per project, create backups, list history, verify SHA-256 hashes, import an external folder in place, and open the backup folder.
 
-These backups do not include the actual objects stored through Supabase Storage.
+`verify_database_backup` verifies manifest inventory, exact expected files, file sizes and SHA-256 values. `validate_database_backup` adds non-executing UTF-8/SQL-dump heuristics and clearly reports that structural validity is not restoreability. `import_database_backup` performs that same validation on an external folder without copying files, storing SQL, changing the registry, or executing SQL. Every restore candidate must be revalidated immediately before use.
+
+**Restoreability** is established only by the separately confirmed local Test Restore: a trusted full backup is staged as exact bytes and restored into a disposable Docker container from an already-installed official Supabase PostgreSQL image pinned by digest. The container has no network, published ports, host bind mounts, or host credentials. Roles, schema and data run in that order with `ON_ERROR_STOP`; the final report inventories tables, estimated data rows, functions, constraints, extensions and RLS. It is still not a source-to-target equivalence guarantee.
+
+Remote restore execution is intentionally unavailable in 3.10.0. The product can only plan/preflight an exact, explicitly opted-in non-production target and will reject ambiguous aliases, source-equals-destination, read-only, disabled, and production targets before attempting a remote write.
+
+These PostgreSQL logical backups do not include the actual objects stored through Supabase Storage. They also do not necessarily capture every Supabase platform setting, secret, Edge Function deployment, webhook, cron job, Auth configuration, or external integration.
+
+### Minimum PAT permissions
+
+Full Access is not a product requirement. Keep Discovery and Operational PATs separate and grant the smallest scope that supports the action:
+
+| Function | Minimum permission / access |
+| --- | --- |
+| Project discovery | Account-wide `Projects: Read` Discovery PAT, or the selected named CLI profile |
+| Project status / target verification | Project-scoped `Project Settings: Read` |
+| Read-only SQL | Project-scoped `Database: Read` |
+| SQL writes and dump temporary login | Project-scoped `Database: Read-write`, explicit confirmation for writes |
+| IPv4 pooler fallback | `database_pooling_config_read`; temporary login may also require `database_write` |
+| Edge Function listing / retrieval | `Edge Functions: Read` |
+| Edge Function deploy / delete | `Edge Functions: Read-write` plus explicit confirmation |
+
+Exact Supabase permission labels can evolve; use the diagnostics response and the Supabase dashboard to identify a denied least-privilege scope rather than replacing it with Full Access.
 
 ### `list_orphaned_secrets`
 Returns orphaned environment-variable names only.

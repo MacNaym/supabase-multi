@@ -17,8 +17,8 @@ RUNTIME_FILES = (
     ROOT / "mcp" / "runtime_bridge.py",
     ROOT / "mcp" / "headless_control_plane.py",
 )
-APP_VERSION = "3.10.0-dev"
-BACKUP_MODULE_VERSION = "1.5-dev"
+APP_VERSION = "3.10.0"
+BACKUP_MODULE_VERSION = "1.5.0"
 STARTED_AT = time.time()
 
 
