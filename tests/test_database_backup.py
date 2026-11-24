@@ -20,15 +20,17 @@ def load_module():
     return module
 
 
-def install_project(monkeypatch, module, *, db_url_env=None):
+def install_project(monkeypatch, module, *, backup_dir=None, db_password_env=None):
     project = {
         "enabled": True,
         "read_only": False,
         "project_ref": "abcdefghijklmnopqrst",
         "token_env": "SUPABASE_PAT_EXAMPLE",
     }
-    if db_url_env:
-        project["db_url_env"] = db_url_env
+    if backup_dir:
+        project["backup_dir"] = str(backup_dir)
+    if db_password_env:
+        project["db_password_env"] = db_password_env
     monkeypatch.setattr(
         module,
         "read_registry",
@@ -37,23 +39,26 @@ def install_project(monkeypatch, module, *, db_url_env=None):
     return project
 
 
-def fake_cli(monkeypatch, module, tmp_path):
-    secret = "postgresql://postgres.example:very-secret@pooler.example.com:5432/postgres"
+def fake_cli(monkeypatch, module, *, password_available=False):
+    access_token = "sbp_project_scoped_secret"
+    db_password = "database-password-secret"
     monkeypatch.setattr(module.shutil, "which", lambda name: "supabase.exe")
 
     def fake_env(name):
-        if name in {"SUPABASE_DB_URL_EXAMPLE_PROD", "CUSTOM_DB_URL"}:
-            return secret
+        if name == "SUPABASE_PAT_EXAMPLE":
+            return access_token
+        if password_available and name in {"SUPABASE_DB_PASSWORD_EXAMPLE_PROD", "CUSTOM_DB_PASSWORD"}:
+            return db_password
         return ""
 
     monkeypatch.setattr(module, "read_token_env_value", fake_env)
 
     seen = []
 
-    def fake_run(command, capture_output=True, text=True, timeout=None):
-        seen.append(list(command))
+    def fake_run(command, capture_output=True, text=True, timeout=None, env=None):
+        seen.append({"command": list(command), "env": dict(env or {})})
         if command == ["supabase.exe", "--version"]:
-            return SimpleNamespace(returncode=0, stdout="2.99.0\n", stderr="")
+            return SimpleNamespace(returncode=0, stdout="3.0.0\n", stderr="")
         assert command[:3] == ["supabase.exe", "db", "dump"]
         output = Path(command[command.index("-f") + 1])
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -61,7 +66,7 @@ def fake_cli(monkeypatch, module, tmp_path):
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
-    return secret, seen
+    return access_token, db_password, seen
 
 
 @pytest.mark.parametrize(
@@ -72,10 +77,10 @@ def fake_cli(monkeypatch, module, tmp_path):
         ("full", {"roles.sql", "schema.sql", "data.sql"}),
     ],
 )
-def test_backup_database_modes_create_manifest_and_hashes(monkeypatch, tmp_path, mode, expected):
+def test_backup_database_uses_project_ref_and_pat(monkeypatch, tmp_path, mode, expected):
     module = load_module()
     install_project(monkeypatch, module)
-    secret, seen = fake_cli(monkeypatch, module, tmp_path)
+    access_token, db_password, seen = fake_cli(monkeypatch, module)
 
     result = module.backup_database(
         "example-prod",
@@ -88,58 +93,108 @@ def test_backup_database_modes_create_manifest_and_hashes(monkeypatch, tmp_path,
 
     assert {item["name"] for item in manifest["files"]} == expected
     assert result["verified"] is True
-    assert result["db_url_env"] == "SUPABASE_DB_URL_EXAMPLE_PROD"
-    assert secret not in json.dumps(result)
-    assert secret not in json.dumps(manifest)
+    assert result["credential_mode"] == "temporary-login"
+    assert result["token_env"] == "SUPABASE_PAT_EXAMPLE"
+    assert access_token not in json.dumps(result)
+    assert access_token not in json.dumps(manifest)
+    assert db_password not in json.dumps(result)
 
-    dump_calls = [call for call in seen if call[:3] == ["supabase.exe", "db", "dump"]]
+    dump_calls = [x for x in seen if x["command"][:3] == ["supabase.exe", "db", "dump"]]
     assert len(dump_calls) == len(expected)
-    for call in dump_calls:
-        assert any(arg.startswith("--remote=postgresql://") for arg in call)
+    for item in dump_calls:
+        call = item["command"]
+        assert "--remote=abcdefghijklmnopqrst" in call
+        assert "--password" not in call
+        assert item["env"]["SUPABASE_ACCESS_TOKEN"] == access_token
 
 
-def test_backup_database_uses_registry_db_url_env_override(monkeypatch, tmp_path):
+def test_backup_database_uses_project_default_destination(monkeypatch, tmp_path):
     module = load_module()
-    install_project(monkeypatch, module, db_url_env="CUSTOM_DB_URL")
-    fake_cli(monkeypatch, module, tmp_path)
+    install_project(monkeypatch, module, backup_dir=tmp_path)
+    fake_cli(monkeypatch, module)
+
+    result = module.backup_database("example-prod", mode="schema")
+
+    assert Path(result["backup_dir"]).is_relative_to(tmp_path)
+
+
+def test_backup_database_explicit_destination_wins(monkeypatch, tmp_path):
+    module = load_module()
+    configured = tmp_path / "configured"
+    explicit = tmp_path / "explicit"
+    install_project(monkeypatch, module, backup_dir=configured)
+    fake_cli(monkeypatch, module)
 
     result = module.backup_database(
         "example-prod",
         mode="schema",
-        destination=str(tmp_path),
+        destination=str(explicit),
     )
 
-    assert result["db_url_env"] == "CUSTOM_DB_URL"
+    assert Path(result["backup_dir"]).is_relative_to(explicit)
 
 
-def test_backup_database_explicit_env_wins(monkeypatch, tmp_path):
-    module = load_module()
-    install_project(monkeypatch, module, db_url_env="SHOULD_NOT_WIN")
-    fake_cli(monkeypatch, module, tmp_path)
-
-    result = module.backup_database(
-        "example-prod",
-        mode="schema",
-        destination=str(tmp_path),
-        db_url_env="CUSTOM_DB_URL",
-    )
-
-    assert result["db_url_env"] == "CUSTOM_DB_URL"
-
-
-def test_backup_database_redacts_connection_string_on_cli_failure(monkeypatch, tmp_path):
+def test_backup_database_retries_with_password_fallback(monkeypatch, tmp_path):
     module = load_module()
     install_project(monkeypatch, module)
-    secret = "postgresql://postgres.example:very-secret@pooler.example.com:5432/postgres"
+    access_token = "sbp_project_scoped_secret"
+    db_password = "database-password-secret"
     monkeypatch.setattr(module.shutil, "which", lambda name: "supabase.exe")
-    monkeypatch.setattr(module, "read_token_env_value", lambda name: secret)
 
-    def fail_run(command, capture_output=True, text=True, timeout=None):
-        return SimpleNamespace(
-            returncode=1,
-            stdout="",
-            stderr=f"could not connect to {secret}",
-        )
+    def fake_env(name):
+        if name == "SUPABASE_PAT_EXAMPLE":
+            return access_token
+        if name == "SUPABASE_DB_PASSWORD_EXAMPLE_PROD":
+            return db_password
+        return ""
+
+    monkeypatch.setattr(module, "read_token_env_value", fake_env)
+    calls = []
+
+    def fake_run(command, capture_output=True, text=True, timeout=None, env=None):
+        calls.append(list(command))
+        if command == ["supabase.exe", "--version"]:
+            return SimpleNamespace(returncode=0, stdout="3.0.0\n", stderr="")
+        output = Path(command[command.index("-f") + 1])
+        if "--password" not in command:
+            return SimpleNamespace(returncode=1, stdout="", stderr="temporary login failed")
+        assert command[command.index("--password") + 1] == db_password
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text("fallback backup\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    result = module.backup_database(
+        "example-prod",
+        mode="schema",
+        destination=str(tmp_path),
+    )
+
+    assert result["credential_mode"] == "database-password-fallback"
+    assert len([x for x in calls if x[:3] == ["supabase.exe", "db", "dump"]]) == 2
+
+
+def test_backup_database_redacts_access_token_and_password(monkeypatch, tmp_path):
+    module = load_module()
+    install_project(monkeypatch, module)
+    access_token = "sbp_project_scoped_secret"
+    db_password = "database-password-secret"
+    monkeypatch.setattr(module.shutil, "which", lambda name: "supabase.exe")
+
+    def fake_env(name):
+        if name == "SUPABASE_PAT_EXAMPLE":
+            return access_token
+        if name == "SUPABASE_DB_PASSWORD_EXAMPLE_PROD":
+            return db_password
+        return ""
+
+    monkeypatch.setattr(module, "read_token_env_value", fake_env)
+
+    def fail_run(command, capture_output=True, text=True, timeout=None, env=None):
+        if "--password" in command:
+            return SimpleNamespace(returncode=1, stdout="", stderr=f"auth {access_token} {db_password}")
+        return SimpleNamespace(returncode=1, stdout="", stderr=f"auth {access_token}")
 
     monkeypatch.setattr(module.subprocess, "run", fail_run)
 
@@ -150,15 +205,17 @@ def test_backup_database_redacts_connection_string_on_cli_failure(monkeypatch, t
             destination=str(tmp_path),
         )
 
-    assert secret not in str(exc.value)
-    assert "[REDACTED_DB_URL]" in str(exc.value)
+    message = str(exc.value)
+    assert access_token not in message
+    assert db_password not in message
+    assert "[REDACTED_ACCESS_TOKEN]" in message or "[REDACTED_DB_PASSWORD]" in message
     assert not any(tmp_path.rglob("manifest.json"))
 
 
 def test_verify_database_backup_detects_tampering(monkeypatch, tmp_path):
     module = load_module()
     install_project(monkeypatch, module)
-    fake_cli(monkeypatch, module, tmp_path)
+    fake_cli(monkeypatch, module)
 
     result = module.backup_database(
         "example-prod",
@@ -176,12 +233,12 @@ def test_verify_database_backup_detects_tampering(monkeypatch, tmp_path):
     assert verification["files"][0]["ok"] is False
 
 
-def test_backup_database_requires_connection_env(monkeypatch, tmp_path):
+def test_backup_database_requires_project_pat(monkeypatch, tmp_path):
     module = load_module()
     install_project(monkeypatch, module)
     monkeypatch.setattr(module, "read_token_env_value", lambda name: "")
 
-    with pytest.raises(ValueError, match="SUPABASE_DB_URL_EXAMPLE_PROD"):
+    with pytest.raises(ValueError, match="SUPABASE_PAT_EXAMPLE"):
         module.backup_database(
             "example-prod",
             mode="full",
@@ -189,14 +246,14 @@ def test_backup_database_requires_connection_env(monkeypatch, tmp_path):
         )
 
 
-def test_backup_database_rejects_invalid_env_name(monkeypatch, tmp_path):
+def test_list_database_backups(monkeypatch, tmp_path):
     module = load_module()
-    install_project(monkeypatch, module)
+    install_project(monkeypatch, module, backup_dir=tmp_path)
+    fake_cli(monkeypatch, module)
 
-    with pytest.raises(ValueError, match="valid environment-variable name"):
-        module.backup_database(
-            "example-prod",
-            mode="schema",
-            destination=str(tmp_path),
-            db_url_env="BAD'); Write-Output hacked; ('",
-        )
+    created = module.backup_database("example-prod", mode="schema")
+    listed = module.list_database_backups("example-prod")
+
+    assert listed["count"] == 1
+    assert listed["backups"][0]["backup_dir"] == created["backup_dir"]
+    assert listed["backups"][0]["mode"] == "schema"
