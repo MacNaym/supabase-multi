@@ -680,6 +680,9 @@ $("#restoreChooseSource").onclick=()=>{showBackupTab("history");$("#backupHistor
 $("#backupGoRestore").onclick=()=>showBackupTab("restore");
 let validatedFullBackup=false;
 let validatedBackupFingerprint="";
+let restoreSourceVersion=null;
+let localRestoreImages=[];
+let restoreImageRequest=0;
 let restoreBusy=false;
 let restoreStarting=false;
 let validationBusy=false;
@@ -689,6 +692,11 @@ async function validateBackupPath(path){
   validatedBackupPath="";
   validatedFullBackup=false;
   validatedBackupFingerprint="";
+  restoreSourceVersion=null;
+  restoreImageRequest++;
+  $("#restoreImage").value="";
+  $("#restoreImageSelect").value="";
+  $("#restoreAutoStatus").textContent="";
   $("#restoreTrusted").checked=false;
   updateRestoreControls();
   const panel=$("#backupValidationReport");
@@ -715,7 +723,8 @@ async function validateBackupPath(path){
     $("#backupValidationDetails").textContent=lines.join("\n");
     const summary=$("#backupValidationSummary");
     [r.project||t("source_external"),r.full_backup?t("complete_backup"):t("partial_backup"),t("integrity")+": "+t(r.integrity_ok?"passed":"failed"),t("structure")+": "+t(r.structure_ok?"passed":"failed"),t("restore_not_tested")].forEach(value=>{const el=document.createElement("p");el.textContent=value;summary.appendChild(el);});
-    if(r.ok){validatedBackupPath=r.backup_dir;validatedFullBackup=r.full_backup===true;validatedBackupFingerprint=r.integrity_fingerprint||"";$("#restoreSourceLabel").textContent=(r.project||t("source_external"))+" · "+(r.created_at||"")+" · "+r.backup_dir;}
+    if(r.ok){restoreSourceVersion=r.postgres_source_version||null;validatedBackupPath=r.backup_dir;validatedFullBackup=r.full_backup===true;validatedBackupFingerprint=r.integrity_fingerprint||"";$("#restoreSourceLabel").textContent=(r.project||t("source_external"))+" · "+(r.created_at||"")+" · "+r.backup_dir;}
+    if(r.ok&&validatedFullBackup)await detectRestoreImages();
     updateRestoreControls();
     show(r.ok?(it?"Backup verificato; ripristino da collaudare.":"Backup verified; restore not tested."):(it?"Backup non valido.":"Backup validation failed."),!r.ok);
   }catch(e){
@@ -734,14 +743,52 @@ $("#backupImportBtn").onclick=async function(){
   finally{this.disabled=false;}
 };
 
-async function detectRestoreImages(){
+function autoSelectRestoreImage(){
+  const it=currentLang==="it";
+  const status=$("#restoreAutoStatus");
   const select=$("#restoreImageSelect");
-  try{const {images}=await api("/api/restore-images");select.replaceChildren(new Option(t("choose_image"),""));for(const image of images){const digest=typeof image==="string"?image:image.digest;const tags=typeof image==="string"?[]:image.tags||[];select.add(new Option((tags.length?tags.join(", "):digest.split("@")[0])+" · "+digest.split("sha256:").pop().slice(0,12),digest));}select.dataset.loaded="1";if(images.length===1&&!$("#restoreImage").value){select.value=typeof images[0]==="string"?images[0]:images[0].digest;$("#restoreImage").value=select.value;}if(!images.length)$("#restoreStatus").textContent=t("no_images");}
-  catch(e){$("#restoreStatus").textContent=e.message;}
+  const version=restoreSourceVersion;
+  if(!validatedFullBackup){status.textContent=it?"Seleziona prima un backup completo.":"Select a full backup first.";return;}
+  if(!version){status.textContent=it?"Versione PostgreSQL non presente nel dump. Verifica la versione di origine prima di usare le impostazioni avanzate.":"Source PostgreSQL version unavailable. Verify it before using advanced settings.";return;}
+  const parts=version.split(".").map(Number);
+  const candidates=[];
+  for(const image of localRestoreImages){
+    if(typeof image==="string")continue;
+    for(const tag of image.tags||[]){
+      const m=tag.match(/:(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+      if(!m)continue;
+      const v=m.slice(1).map(Number);
+      if(v[0]===parts[0]&&v[1]===parts[1])candidates.push({digest:image.digest,tag,v});
+    }
+  }
+  candidates.sort((a,b)=>b.v[2]-a.v[2]||b.v[3]-a.v[3]||a.digest.localeCompare(b.digest));
+  if(!candidates.length){status.textContent=(it?"Nessuna immagine locale con la stessa versione PostgreSQL ":"No local image matching PostgreSQL ")+version+(it?". Installa una versione compatibile o consulta le impostazioni avanzate.":". Install a compatible image or review advanced settings.");return;}
+  const chosen=candidates[0];
+  select.value=chosen.digest;
+  $("#restoreImage").value=chosen.digest;
+  status.textContent=(it?"Selezione automatica per PostgreSQL ":"Automatic selection for PostgreSQL ")+version+" · "+chosen.tag+(it?" (compatibilità da collaudare)":" (compatibility not yet tested)");
+}
+async function detectRestoreImages(){
+  const select=$("#restoreImageSelect"), request=++restoreImageRequest;
+  try{
+    const {images}=await api("/api/restore-images");
+    if(request!==restoreImageRequest)return;
+    localRestoreImages=images;
+    select.replaceChildren(new Option(t("choose_image"),""));
+    for(const image of images){
+      const digest=typeof image==="string"?image:image.digest;
+      const tags=typeof image==="string"?[]:image.tags||[];
+      select.add(new Option((tags.length?tags.join(", "):digest.split("@")[0])+" · "+digest.split("sha256:").pop().slice(0,12),digest));
+    }
+    select.dataset.loaded="1";
+    $("#restoreImage").value="";
+    autoSelectRestoreImage();
+    if(!images.length)$("#restoreAutoStatus").textContent=t("no_images");
+  }catch(e){if(request===restoreImageRequest)$("#restoreAutoStatus").textContent=e.message;}
   updateRestoreControls();
 }
 $("#restoreDetectImages").onclick=detectRestoreImages;
-$("#restoreImageSelect").onchange=function(){$("#restoreImage").value=this.value;updateRestoreControls();};
+$("#restoreImageSelect").onchange=function(){$("#restoreImage").value=this.value;$("#restoreAutoStatus").textContent=currentLang==="it"?"Immagine scelta manualmente — verifica compatibilità.":"Manual image selection — verify compatibility.";updateRestoreControls();};
 function updateRestoreControls(){
   $("#backupGoRestore").disabled=!validatedFullBackup||validationBusy;
   $("#restoreTestBtn").disabled=restoreBusy||restoreStarting||backupBusy||!validatedFullBackup||!$("#restoreTrusted").checked||!$("#restoreImage").value.trim();
