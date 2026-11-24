@@ -1209,7 +1209,9 @@ def start_backup_job(project, account, mode, destination, expected_ref):
     if mode not in {"full", "schema", "data"}:
         raise ValueError("Invalid backup mode.")
     phases = ["preflight", "connection"] + (["roles", "schema", "data"] if mode == "full" else [mode]) + ["manifest", "verify"]
-    with BACKUP_JOB_LOCK:
+    with BACKUP_JOB_LOCK, RESTORE_JOB_LOCK:
+        if RESTORE_JOB and RESTORE_JOB["status"] in {"queued","running"}:
+            raise ValueError("Wait for the restore test to finish.")
         if BACKUP_JOB and BACKUP_JOB["status"] in {"queued", "running"}:
             raise ValueError("A dashboard backup is already in progress.")
         job_id = secrets.token_hex(16)
@@ -1254,6 +1256,46 @@ def start_backup_job(project, account, mode, destination, expected_ref):
     return job_id
 
 
+RESTORE_JOB_LOCK = threading.Lock()
+RESTORE_JOB = None
+
+
+def restore_job_snapshot():
+    with RESTORE_JOB_LOCK:
+        if RESTORE_JOB is None:
+            return None
+        job = dict(RESTORE_JOB)
+    job["elapsed_seconds"] = int((job.get("finished_at") or time.time()) - job["started_at"])
+    return job
+
+
+def start_restore_test(path, image, trusted):
+    global RESTORE_JOB
+    if trusted is not True:
+        raise ValueError("Confirm that the backup is trusted.")
+    with BACKUP_JOB_LOCK, RESTORE_JOB_LOCK:
+        if BACKUP_JOB and BACKUP_JOB["status"] in {"queued","running"}:
+            raise ValueError("Wait for the dashboard backup to finish.")
+        if RESTORE_JOB and RESTORE_JOB["status"] in {"queued","running"}:
+            raise ValueError("Restore test already running.")
+        job_id = secrets.token_hex(16)
+        RESTORE_JOB = {"id":job_id,"status":"queued","phase":"validation","started_at":time.time()}
+    def progress(phase):
+        with RESTORE_JOB_LOCK:
+            RESTORE_JOB.update(status="running",phase=phase)
+    def worker():
+        try:
+            from restore_engine import test_restore
+            report = test_restore(path,image=image,trusted=trusted,progress=progress)
+            with RESTORE_JOB_LOCK:
+                RESTORE_JOB.update(status="completed" if report["ok"] else "failed",report=report,finished_at=time.time())
+        except Exception:
+            with RESTORE_JOB_LOCK:
+                RESTORE_JOB.update(status="failed",error="Restore test could not start or failed.",finished_at=time.time())
+    threading.Thread(target=worker,daemon=True,name="restore-test").start()
+    return job_id
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw): super().__init__(*a,directory=str(UI_DIR),**kw)
     def log_message(self,fmt,*args): sys.stdout.write("[ui] "+fmt%args+"\n")
@@ -1265,6 +1307,8 @@ class Handler(SimpleHTTPRequestHandler):
         l=int(self.headers.get("Content-Length","0")); raw=self.rfile.read(l); return json.loads(raw.decode()) if raw else {}
     def do_GET(self):
         p=urlparse(self.path)
+        if p.path=="/api/restore-job":
+            self.send_json({"ok":True,"job":restore_job_snapshot()});return
         if p.path=="/api/backup-job":
             self.send_json({"ok":True,"job":backup_job_snapshot()});return
         if p.path=="/api/runtime":
@@ -1290,6 +1334,9 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             body=self.read_json()
             if path=="/api/shutdown":
+                restore=restore_job_snapshot()
+                if restore and restore["status"] in {"queued","running"}:
+                    raise ValueError("Cannot shut down during restore test.")
                 job=backup_job_snapshot()
                 if job and job["status"] in {"queued","running"}:
                     raise ValueError("Cannot shut down while a dashboard backup is running.")
@@ -1334,6 +1381,13 @@ class Handler(SimpleHTTPRequestHandler):
                     p.pop("backup_dir",None)
                 write_registry(reg)
                 self.send_json({"ok":True,"message":"Backup destination saved.","project":project,"backup_dir":p.get("backup_dir","")});return
+            if path=="/api/restore-test-start":
+                job_id=start_restore_test(str(body.get("path") or ""),str(body.get("image") or ""),body.get("trusted"))
+                self.send_json({"ok":True,"job_id":job_id},202);return
+            if path=="/api/restore-plan":
+                from restore_engine import plan_remote_restore
+                result=plan_remote_restore(str(body.get("path") or ""),account=body.get("account"),project=body.get("project"),expected_ref=body.get("expected_ref"),trusted=body.get("trusted"))
+                self.send_json({"ok":True,"result":result});return
             if path=="/api/backup-start":
                 reg=read_registry()
                 project,p=validate_backup_selection(reg,body)
