@@ -809,6 +809,7 @@ def _run_backup_dump(
         "db",
         "dump",
         f"--remote={project_ref}",
+        "--profile", "supabase",
         "-f",
         str(output),
         *extra_args,
@@ -818,6 +819,7 @@ def _run_backup_dump(
 
     env = os.environ.copy()
     env["SUPABASE_ACCESS_TOKEN"] = access_token
+    env.pop("SUPABASE_PROFILE", None)
     proc = subprocess.run(
         command,
         capture_output=True,
@@ -906,6 +908,9 @@ def backup_database(
                 # Supabase CLI normally creates a temporary database login from
                 # SUPABASE_ACCESS_TOKEN. A project-specific DB password is only
                 # an optional fallback for environments where temporary login fails.
+                detail = str(first_error).lower()
+                if not any(marker in detail for marker in ("temporary login", "temporary role", "password authentication failed", "28p01", "database_write")):
+                    raise
                 db_password = read_token_env_value(password_env)
                 if not db_password:
                     raise RuntimeError(
@@ -949,6 +954,7 @@ def backup_database(
             "format": "supabase-multi-backup-v1",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "project": project_name,
+            "account": project.get("account"),
             "project_ref": project_ref,
             "mode": mode,
             "credential_mode": credential_mode,
@@ -1010,6 +1016,8 @@ def list_database_backups(
                 continue
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if manifest.get("project") != project_name or manifest.get("project_ref") != project.get("project_ref"):
+                    continue
                 backups.append(
                     {
                         "backup_dir": str(child),
