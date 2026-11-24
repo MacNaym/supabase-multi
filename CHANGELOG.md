@@ -113,3 +113,5 @@ Initial public pre-release.
 <!-- End of changelog -->
 
 - 3.10.1-dev: Backup & Restore sub-tabs, concise validation, explicit source selection instead of automatically reimporting recent external backups, local pinned Docker image discovery and improved bilingual controls. Remote restore remains disabled.
+
+- 3.10.1-dev UX follow-up: direct history-to-restore selection, Docker image tags with pinned digest, contextual help for source and image selection.
