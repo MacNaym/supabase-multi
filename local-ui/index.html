@@ -156,6 +156,15 @@
         <div class="backup-grid">
           <label><span data-i18n="account_title">Account</span><select id="backupAccount"></select></label>
           <label><span data-i18n="project">Project</span><select id="backupProject" disabled></select><small id="backupProjectRef" class="muted">—</small></label>
+        </div>
+        <nav class="backup-tabs" aria-label="Backup & Restore">
+          <button type="button" class="secondary" data-backup-tab="create" data-i18n="tab_create" aria-pressed="true">Backup</button>
+          <button type="button" class="secondary" data-backup-tab="history" data-i18n="backup_history" aria-pressed="false">History</button>
+          <button type="button" class="secondary" data-backup-tab="validate" data-i18n="tab_validate" aria-pressed="false">Validation</button>
+          <button type="button" class="secondary" data-backup-tab="restore" data-i18n="tab_restore" aria-pressed="false">Restore</button>
+        </nav>
+        <div data-backup-panel="create">
+        <div class="backup-grid">
           <label><span data-i18n="backup_mode">Backup type</span>
             <select id="backupMode">
               <option value="full" data-i18n="backup_full">Full — roles + schema + data</option>
@@ -177,6 +186,7 @@
           <span id="backupCredentialHint" class="muted" data-i18n="backup_credential_hint">Uses project ref + project PAT. Database password is only a fallback.</span>
         </div>
 
+        </div>
         <section id="backupProgressPanel" class="dashboard-section hidden" aria-live="polite">
           <h3 id="backupProgressTitle">Backup progress</h3>
           <progress id="backupProgressBar" max="7" value="0" style="width:100%"></progress>
@@ -184,30 +194,36 @@
           <p id="backupProgressStats" class="muted"></p>
           <p id="backupProgressStatus"></p>
         </section>
-        <section class="dashboard-section">
-          <h3 id="backupValidationHeading">Validate / Import Backup</h3>
-          <p id="backupImportHint" class="muted">Select an existing backup folder. Files stay in their original location.</p>
-          <button id="backupImportBtn" class="secondary">Import backup</button>
+        <section class="dashboard-section hidden" data-backup-panel="validate">
+          <h3 id="backupValidationHeading" data-i18n="tab_validate">Validate / Import Backup</h3>
+          <p id="backupImportHint" class="muted" data-i18n="import_hint">Select an existing backup folder. Files stay in their original location.</p>
+          <button id="backupImportBtn" class="secondary" data-i18n="import_backup">Import backup</button>
           <section id="backupValidationReport" class="hidden" aria-live="polite">
             <h4 id="backupValidationStatus"></h4>
-            <pre id="backupValidationDetails" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+            <div id="backupValidationSummary" class="backup-summary"></div>
+            <button id="backupGoRestore" class="secondary" disabled data-i18n="test_restore">Test restore</button>
+            <details><summary data-i18n="technical_details">Technical details</summary><pre id="backupValidationDetails" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></details>
           </section>
         </section>
-        <section class="dashboard-section">
-          <h3>Restore test / Ripristino di prova</h3>
-          <p class="muted">Disposable local Docker database; no remote writes. Validate a trusted full backup first.</p>
-          <label>Supabase PostgreSQL image (local digest)<input id="restoreImage" placeholder="supabase/postgres@sha256:..."></label>
-          <label><input type="checkbox" id="restoreTrusted"> I trust this backup and authorize local SQL execution.</label>
-          <button id="restoreTestBtn" class="secondary" disabled>Test restore</button>
+        <section class="dashboard-section hidden" data-backup-panel="restore">
+          <h3 data-i18n="test_restore">Restore test</h3>
+          <p class="muted" data-i18n="restore_hint">Disposable local Docker database; no remote writes. Validate a trusted full backup first.</p>
+          <div class="backup-source"><strong data-i18n="restore_source">Selected backup</strong><p id="restoreSourceLabel">—</p><button id="restoreChooseSource" class="secondary" data-i18n="choose_backup">Choose backup</button></div>
+          <label><span data-i18n="restore_image">Local Supabase PostgreSQL image</span><select id="restoreImageSelect"><option value="">—</option></select></label>
+          <button id="restoreDetectImages" class="secondary" data-i18n="detect_images">Detect local images</button>
+          <details><summary data-i18n="advanced_settings">Advanced settings</summary><label><span data-i18n="image_digest">Pinned image digest</span><input id="restoreImage" placeholder="supabase/postgres@sha256:..."></label></details>
+          <label class="restore-trust"><input type="checkbox" id="restoreTrusted"><span data-i18n="restore_trust">I trust this backup and authorize local SQL execution.</span></label>
+          <button id="restoreTestBtn" disabled data-i18n="test_restore">Test restore</button>
           <progress id="restoreProgress" max="8" value="0" style="width:100%"></progress>
-          <pre id="restoreReport" style="white-space:pre-wrap;overflow-wrap:anywhere" aria-live="polite"></pre>
-          <p class="muted">Remote restore execution is disabled pending end-to-end verification.</p>
+          <p id="restoreStatus" aria-live="polite"></p><details><summary data-i18n="technical_details">Technical details</summary><pre id="restoreReport" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></details>
+          <p class="muted" data-i18n="remote_disabled">Remote restore execution is disabled pending end-to-end verification.</p>
         </section>
-        <section class="dashboard-section">
+        <section class="dashboard-section hidden" data-backup-panel="history">
           <div class="section-head">
             <div><h3 data-i18n="backup_history">Backup history</h3><p id="backupRootHint" class="muted">—</p></div>
           </div>
           <div id="backupEmpty" class="empty" data-i18n="backup_none">No backups found.</div>
+          <button id="backupHistoryImport" class="secondary" data-i18n="import_backup">Import backup</button>
           <div id="backupHistoryWrap" class="table-wrap hidden"><table id="backupHistoryTable"></table></div>
         </section>
       </div>
