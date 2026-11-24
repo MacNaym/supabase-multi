@@ -713,33 +713,60 @@ if($("#backupSaveDestinationBtn"))$("#backupSaveDestinationBtn").onclick=async f
   }catch(e){show(e.message,true)}
 };
 
+let backupLastStatus="";
+let backupPollRunning=false;
+async function pollBackupJob(){
+  if(backupPollRunning)return;
+  backupPollRunning=true;
+  try{
+    const {job}=await api("/api/backup-job");
+    if(!job){
+      if(backupBusy){
+        backupBusy=false;
+        updateBackupControls();
+        $("#backupProgressStatus").textContent="Job not found — server may have restarted.";
+      }
+      return;
+    }
+    const active=["queued","running"].includes(job.status);
+    const it=currentLang==="it";
+    const labels=it?{preflight:"Prerequisiti",connection:"Connessione",pooler:"Connessione IPv4",roles:"Ruoli",schema:"Schema",data:"Dati",manifest:"Manifest",verify:"Verifica integrità",complete:"Completato"}:{preflight:"Preflight",connection:"Connection",pooler:"IPv4 connection",roles:"Roles",schema:"Schema",data:"Data",manifest:"Manifest",verify:"Integrity check",complete:"Complete"};
+    $("#backupProgressPanel").classList.remove("hidden");
+    $("#backupProgressTitle").textContent=job.account+" / "+job.project+" — "+job.mode.toUpperCase();
+    $("#backupProgressBar").max=job.phases.length;
+    $("#backupProgressBar").value=job.completed;
+    $("#backupProgressPhase").textContent=(labels[job.phase]||job.phase)+" · "+job.completed+"/"+job.phases.length;
+    $("#backupProgressStats").textContent=(it?"Tempo: ":"Elapsed: ")+job.elapsed_seconds+" s · "+(it?"File prodotti: ":"Files written: ")+job.bytes_written.toLocaleString()+" B · "+(it?"Server raggiungibile":"Server reachable");
+    $("#backupProgressStatus").textContent=active?(it?"In corso — la fase attuale può richiedere tempo.":"Running — current phase may take time."):(job.status==="completed"?(it?"Backup completato e verificato.":"Backup completed and verified."):(job.error||"Backup failed"));
+    backupBusy=active;
+    updateBackupControls();
+    const key=job.id+":"+job.status;
+    if(key!==backupLastStatus && !active){
+      if(job.status==="completed"){show(job.backup_dir);await refreshBackupHistory();}
+      else show(job.error||"Backup failed",true);
+    }
+    backupLastStatus=key;
+  }catch(e){
+    if(backupBusy)$("#backupProgressStatus").textContent="Server connection lost — backup status unknown; retrying.";
+  }finally{backupPollRunning=false;}
+}
 if($("#backupCreateBtn"))$("#backupCreateBtn").onclick=async function(){
   const selected=backupSelection();
   if(!selected||backupBusy)return;
-  const {account,project}=selected;
-  const mode=$("#backupMode").value;
-  const destination=($("#backupDestination").value||"").trim();
-  if(!project){show(t("project_not_found"),true);return}
-  const button=$("#backupCreateBtn");
   backupBusy=true;
   updateBackupControls();
-  const oldText=button.textContent;
-  button.textContent=currentLang==="it"?"Backup in corso…":"Backing up…";
-  log("Backup "+mode+" in corso per "+project+"…");
   try{
-    const r=await api("/api/backup-create",{account,project,mode:mode,destination:destination||null,save_default:false});
-    show(r.message+"\n"+r.result.backup_dir);
-    log(JSON.stringify(r.result,null,2));
-    await refreshBackupHistory();
+    await api("/api/backup-start",{account:selected.account,project:selected.project,mode:$("#backupMode").value,destination:($("#backupDestination").value||"").trim()||null});
+    await pollBackupJob();
   }catch(e){
-    show(e.message,true);
-    log(e.message);
-  }finally{
     backupBusy=false;
     updateBackupControls();
-    button.textContent=oldText;
+    show(e.message,true);
+    await pollBackupJob();
   }
 };
+setInterval(pollBackupJob,1500);
+pollBackupJob();
 
 if($("#backupRefreshBtn"))$("#backupRefreshBtn").onclick=refreshBackupHistory;
 
