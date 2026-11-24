@@ -257,6 +257,7 @@ def _project_payload(
         "read_only": bool(project.get("read_only", False)),
         "token_env": token_env,
         "token_ok": token_ok,
+        "backup_dir": project.get("backup_dir") or "",
         "mcp": f"sb_{name}",
         "platform_status": platform_status,
         "platform_seen": platform_seen,
@@ -974,7 +975,15 @@ def list_database_backups(
     *,
     destination: str | None = None,
 ) -> dict[str, Any]:
-    _project_ref, _token_env, _access_token, _password_env, project = _backup_source(project_name)
+    project_name = (project_name or "").strip()
+    if not project_name:
+        raise ValueError("Project target is required.")
+
+    reg = read_registry()
+    project = reg.get("projects", {}).get(project_name)
+    if not project:
+        raise ValueError("Project not found.")
+
     configured_destination = str(project.get("backup_dir") or "").strip()
     root = (
         Path(destination).expanduser()
