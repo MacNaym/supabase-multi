@@ -176,3 +176,54 @@ def plan_remote_restore(path: str, *, account: str, project: str, expected_ref: 
             "Require explicit destination reference confirmation and isolated restore test.",
         ],
     }
+
+
+def remote_restore_preflight(path: str, *, account: str, project: str, expected_ref: str,
+                             trusted: bool = False, certificate: str):
+    """Read-only SQL inventory using a project-specific password and verified TLS.
+
+    No restore is authorized by this result. A baseline inventory must be reviewed.
+    """
+    import urllib.parse
+    from headless_control_plane import _backup_source, _backup_pooler_url, read_token_env_value
+    plan = plan_remote_restore(path, account=account, project=project,
+                               expected_ref=expected_ref, trusted=trusted)
+    ref, _, token, password_env, target = _backup_source(project)
+    if ref != expected_ref or target.get("account") != account:
+        raise ValueError("Destination changed.")
+    password = read_token_env_value(password_env)
+    if not password:
+        raise ValueError("Configure the destination database password locally.")
+    cert = Path(certificate).expanduser().resolve()
+    if not cert.is_file():
+        raise ValueError("Destination TLS root certificate is required.")
+    psql = shutil.which("psql")
+    if not psql:
+        raise RuntimeError("psql is required for remote restore preflight.")
+    url = urllib.parse.urlsplit(_backup_pooler_url(ref, token, password))
+    env = {k:v for k,v in os.environ.items() if not k.upper().startswith(("PG","SUPABASE_"))}
+    env.update(PGHOST=url.hostname, PGPORT="5432", PGDATABASE="postgres",
+               PGUSER="postgres."+ref, PGPASSWORD=password, PGSSLMODE="verify-full",
+               PGSSLROOTCERT=str(cert), PGCONNECT_TIMEOUT="15",
+               PGOPTIONS="-c default_transaction_read_only=on -c statement_timeout=30000")
+    query = """SELECT json_build_object(
+      'database',current_database(),
+      'version_num',current_setting('server_version_num'),
+      'read_only',current_setting('transaction_read_only'),
+      'public_objects',(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','S','f')),
+      'extensions',(SELECT coalesce(json_agg(extname ORDER BY extname),'[]'::json) FROM pg_extension),
+      'schemas',(SELECT coalesce(json_agg(nspname ORDER BY nspname),'[]'::json) FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname <> 'information_schema'),
+      'foreign_servers',(SELECT count(*) FROM pg_foreign_server));"""
+    try:
+        proc = subprocess.run([psql,"-X","-w","-At","--set","ON_ERROR_STOP=1","-c",query],
+                              capture_output=True,text=True,timeout=60,env=env)
+        if proc.returncode:
+            raise RuntimeError("Destination SQL preflight failed. Check TLS, password and permissions.")
+        inventory = json.loads(proc.stdout.strip())
+        if inventory.get("database") != "postgres" or inventory.get("read_only") != "on":
+            raise RuntimeError("Unexpected destination database or transaction mode.")
+    except (OSError, subprocess.TimeoutExpired, ValueError, TypeError):
+        raise RuntimeError("Destination preflight failed or returned invalid metadata.") from None
+    plan.update(remote_checked=True, inventory=inventory,
+                public_schema_empty=inventory.get("public_objects")==0)
+    return plan
