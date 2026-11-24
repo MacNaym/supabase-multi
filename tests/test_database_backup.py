@@ -252,6 +252,7 @@ def test_list_database_backups(monkeypatch, tmp_path):
     fake_cli(monkeypatch, module)
 
     created = module.backup_database("example-prod", mode="schema")
+    monkeypatch.setattr(module, "read_token_env_value", lambda name: "")
     listed = module.list_database_backups("example-prod")
 
     assert listed["count"] == 1
