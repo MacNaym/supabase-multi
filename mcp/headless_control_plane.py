@@ -1156,7 +1156,11 @@ def verify_database_backup(path: str) -> dict[str, Any]:
     if not manifest_path.is_file():
         raise ValueError("manifest.json was not found in the backup path.")
 
+    if manifest_path.is_symlink() or manifest_path.stat().st_size > 1048576:
+        raise ValueError("Unsafe or oversized manifest.")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError("Invalid manifest object.")
     if manifest.get("format") != "supabase-multi-backup-v1":
         raise ValueError("Unsupported backup manifest format.")
 
@@ -1165,7 +1169,8 @@ def verify_database_backup(path: str) -> dict[str, Any]:
     all_ok = True
 
     manifest_files = manifest.get("files")
-    expected = {"full": {"roles.sql", "schema.sql", "data.sql"}, "schema": {"schema.sql"}, "data": {"data.sql"}}.get(manifest.get("mode"))
+    mode = manifest.get("mode")
+    expected = {"full": {"roles.sql", "schema.sql", "data.sql"}, "schema": {"schema.sql"}, "data": {"data.sql"}}.get(mode) if isinstance(mode, str) else None
     if not expected or not isinstance(manifest_files, list) or any(not isinstance(x, dict) for x in manifest_files):
         raise ValueError("Invalid backup manifest mode or files.")
     names = [x.get("name") for x in manifest_files]
@@ -1202,6 +1207,59 @@ def verify_database_backup(path: str) -> dict[str, Any]:
         "manifest": str(manifest_path),
         "files": checks,
     }
+
+
+def validate_database_backup(path: str) -> dict[str, Any]:
+    """Non-executing, streaming heuristic checks. Never return SQL contents."""
+    try:
+        integrity = verify_database_backup(path)
+    except (ValueError, OSError, TypeError):
+        return {"ok": False, "integrity_ok": False, "structure_ok": False,
+                "restore_tested": False, "error": "Invalid or unreadable manifest / file inventory.", "files": []}
+    report = dict(integrity)
+    report.update(integrity_ok=integrity["ok"], structure_ok=False, restore_tested=False,
+                  trust_required=True, full_backup=integrity["mode"] == "full")
+    report["limitations"] = [
+        "Heuristic text inspection only; not a SQL parser or security scan.",
+        "Hashes detect corruption, not maliciously modified manifests.",
+        "Only execute backups from trusted sources; a restore test is required.",
+        "Storage object files and platform configuration are not included.",
+    ]
+    if not integrity["ok"]:
+        return report
+    try:
+        manifest = json.loads(Path(integrity["manifest"]).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        report.update(ok=False, integrity_ok=False, error="Manifest changed or became unreadable.")
+        return report
+    # Metadata is displayed locally as text only, never executed.
+    for key in ("account", "created_at", "supabase_cli_version"):
+        value = manifest.get(key)
+        report[key] = value[:160] if isinstance(value, str) else None
+    report["total_bytes"] = sum(item["bytes"] for item in integrity["files"])
+    report["structure_ok"] = True
+    # Empty roles/data dumps are legitimate when a database has no custom roles/data.
+    # Use pg_dump header or common SQL statements as evidence, not a grammar.
+    marker = re.compile(r"^\s*(?:--\s*(?:PostgreSQL database|Roles|Data|Name:|Started on|Completed on)|(?:SET|SELECT|CREATE|ALTER|GRANT|REVOKE|COMMENT|COPY|INSERT|UPDATE|DELETE|TRUNCATE|DO|BEGIN|COMMIT)\b)", re.I)
+    for item in report["files"]:
+        found = False
+        invalid = False
+        try:
+            with (Path(integrity["backup_dir"]) / item["name"]).open("r", encoding="utf-8-sig") as stream:
+                for line in stream:
+                    if "\x00" in line:
+                        invalid = True
+                        break
+                    if marker.match(line):
+                        found = True
+        except (OSError, UnicodeError):
+            invalid = True
+        item["structure_ok"] = found and not invalid
+        item["structure_note"] = ("Recognizable SQL/dump text; not parsed." if item["structure_ok"]
+                                  else "Unreadable, binary or unrecognized SQL/dump text.")
+        report["structure_ok"] = report["structure_ok"] and item["structure_ok"]
+    report["ok"] = report["integrity_ok"] and report["structure_ok"]
+    return report
 
 
 def execute_project_sql(
