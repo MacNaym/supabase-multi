@@ -1365,6 +1365,10 @@ class Handler(SimpleHTTPRequestHandler):
                 destination=(body.get("destination") or "").strip() or None
                 result=backup_backend().list_database_backups(project,destination=destination)
                 self.send_json({"ok":True,"result":result});return
+            if path=="/api/backup-validate":
+                backup_path=(body.get("path") or "").strip()
+                result=backup_backend().validate_database_backup(backup_path)
+                self.send_json({"ok":True,"result":result});return
             if path=="/api/backup-verify":
                 backup_path=(body.get("path") or "").strip()
                 result=backup_backend().verify_database_backup(backup_path)
