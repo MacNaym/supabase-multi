@@ -884,6 +884,16 @@ def backup_database(
     db_password = ""
     try:
         for file_name, args in jobs:
+            if db_password:
+                _run_backup_dump(
+                    cli,
+                    project_ref,
+                    access_token,
+                    backup_dir / file_name,
+                    args,
+                    db_password=db_password,
+                )
+                continue
             try:
                 _run_backup_dump(
                     cli,
@@ -896,8 +906,7 @@ def backup_database(
                 # Supabase CLI normally creates a temporary database login from
                 # SUPABASE_ACCESS_TOKEN. A project-specific DB password is only
                 # an optional fallback for environments where temporary login fails.
-                if not db_password:
-                    db_password = read_token_env_value(password_env)
+                db_password = read_token_env_value(password_env)
                 if not db_password:
                     raise RuntimeError(
                         str(first_error)
