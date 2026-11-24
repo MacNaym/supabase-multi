@@ -418,6 +418,51 @@ def test_backup_job_duplicate_and_completion(monkeypatch, tmp_path):
     assert ui.backup_job_snapshot()["status"] == "completed"
 
 
+def test_restore_job_rejects_duplicate_and_keeps_snapshot(monkeypatch):
+    """A second restore submission must not replace the running job seen after refresh."""
+    import sys
+    import threading
+
+    monkeypatch.syspath_prepend(str(ROOT))
+    spec = importlib.util.spec_from_file_location("restore_ui_job_test", ROOT / "local-ui" / "server.py")
+    ui = importlib.util.module_from_spec(spec)
+    assert spec.loader
+    spec.loader.exec_module(ui)
+    release = threading.Event()
+    entered = threading.Event()
+    finished = threading.Event()
+
+    def restore(path, *, image, trusted, progress):
+        progress("container")
+        entered.set()
+        assert release.wait(5)
+        return {"ok": True, "cleanup_ok": True}
+
+    monkeypatch.setitem(sys.modules, "restore_engine", SimpleNamespace(test_restore=restore))
+    real_thread = threading.Thread
+
+    def thread_factory(target, **kwargs):
+        def run():
+            try:
+                target()
+            finally:
+                finished.set()
+        return real_thread(target=run, **kwargs)
+
+    monkeypatch.setattr(ui.threading, "Thread", thread_factory)
+    try:
+        job_id = ui.start_restore_test("C:/synthetic", "supabase/postgres@sha256:" + "a" * 64, True)
+        assert entered.wait(5)
+        snapshot = ui.restore_job_snapshot()
+        assert snapshot["id"] == job_id and snapshot["status"] == "running" and snapshot["phase"] == "container"
+        with pytest.raises(ValueError, match="already running"):
+            ui.start_restore_test("C:/synthetic", "supabase/postgres@sha256:" + "a" * 64, True)
+    finally:
+        release.set()
+    assert finished.wait(5)
+    assert ui.restore_job_snapshot()["status"] == "completed"
+
+
 def make_validation_fixture(module, tmp_path, mode="full"):
     names = {"full":["roles.sql","schema.sql","data.sql"], "schema":["schema.sql"], "data":["data.sql"]}[mode]
     files=[]
