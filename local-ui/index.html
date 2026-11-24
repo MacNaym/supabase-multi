@@ -209,9 +209,11 @@
           <h3 data-i18n="test_restore">Restore test</h3>
           <p class="muted" data-i18n="restore_hint">Disposable local Docker database; no remote writes. Validate a trusted full backup first.</p>
           <div class="backup-source"><strong data-i18n="restore_source">Selected backup</strong> <button type="button" class="help-btn" data-help="restore_source" aria-label="Help / Aiuto">?</button><p id="restoreSourceLabel">—</p><button id="restoreChooseSource" class="secondary" data-i18n="choose_backup">Choose backup</button></div>
+          <p id="restoreAutoStatus" aria-live="polite" class="backup-source"></p>
+          <details><summary data-i18n="advanced_settings">Advanced settings</summary>
           <div class="row"><span data-i18n="restore_image">Local Supabase PostgreSQL image</span><button type="button" class="help-btn" data-help="restore_image" aria-label="Help / Aiuto">?</button></div><label><select aria-label="PostgreSQL Docker image" id="restoreImageSelect"><option value="">—</option></select></label>
           <button id="restoreDetectImages" class="secondary" data-i18n="detect_images">Detect local images</button>
-          <details><summary data-i18n="advanced_settings">Advanced settings</summary><label><span data-i18n="image_digest">Pinned image digest</span><input id="restoreImage" placeholder="supabase/postgres@sha256:..."></label></details>
+          <label><span data-i18n="image_digest">Pinned image digest</span><input id="restoreImage" placeholder="supabase/postgres@sha256:..."></label></details>
           <label class="restore-trust"><input type="checkbox" id="restoreTrusted"><span data-i18n="restore_trust">I trust this backup and authorize local SQL execution.</span></label>
           <button id="restoreTestBtn" disabled data-i18n="test_restore">Test restore</button>
           <progress id="restoreProgress" max="8" value="0" style="width:100%"></progress>
