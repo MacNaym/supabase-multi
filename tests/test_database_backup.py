@@ -521,3 +521,18 @@ def test_runtime_bridge_advertises_and_dispatches_safe_backup_inspection(monkeyp
     assert bridge.invoke_live_capability("validate_database_backup", {"path": "C:/safe"})["ok"]
     assert bridge.invoke_live_capability("import_database_backup", {"path": "C:/safe"})["imported"]
     assert "remote_restore" not in names
+
+
+def test_control_plane_browser_autostart_can_be_disabled(monkeypatch):
+    """Ignoring --no-browser or the launcher guard must make this fail."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("backup_ui_browser_test", ROOT / "local-ui" / "server.py")
+    ui = importlib.util.module_from_spec(spec)
+    assert spec.loader
+    spec.loader.exec_module(ui)
+
+    assert ui.browser_autostart_enabled(["server.py"], {}) is True
+    assert ui.browser_autostart_enabled(["server.py", "--no-browser"], {}) is False
+    assert ui.browser_autostart_enabled(["server.py"], {"SUPABASE_MULTI_NO_BROWSER": "1"}) is False
+    assert ui.browser_autostart_enabled(["server.py"], {"SUPABASE_MULTI_LAUNCHER": "1"}) is False

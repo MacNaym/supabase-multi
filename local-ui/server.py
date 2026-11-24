@@ -38,6 +38,18 @@ DEFAULT_FEATURES = ["database", "debugging", "development", "functions", "docs"]
 BROWSER_PROFILES = UI_DIR / "browser-profiles"
 
 
+def browser_autostart_enabled(argv=None, environment=None):
+    """Keep browser ownership singular when called through the public launcher."""
+    args = sys.argv if argv is None else argv
+    env = os.environ if environment is None else environment
+    disabled = str(env.get("SUPABASE_MULTI_NO_BROWSER", "")).strip().lower()
+    return (
+        "--no-browser" not in args
+        and disabled not in {"1", "true", "yes"}
+        and str(env.get("SUPABASE_MULTI_LAUNCHER", "")).strip() != "1"
+    )
+
+
 def safe_name(value):
     return "".join(ch if ch.isalnum() or ch in "-_." else "-" for ch in str(value or "").strip()) or "default"
 
@@ -1764,7 +1776,8 @@ def main():
     print(f"runtime={runtime['source_fingerprint'][:12]} git={runtime['git_commit'][:12] or 'unknown'}")
     print(f"http://{HOST}:{PORT}  (localhost only)")
     server=ThreadingHTTPServer((HOST,PORT),Handler)
-    threading.Timer(.8,lambda:webbrowser.open(f"http://{HOST}:{PORT}")).start()
+    if browser_autostart_enabled():
+        threading.Timer(.8,lambda:webbrowser.open(f"http://{HOST}:{PORT}")).start()
     try:server.serve_forever()
     except KeyboardInterrupt:pass
     finally:server.server_close()
