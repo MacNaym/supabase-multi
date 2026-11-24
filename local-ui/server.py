@@ -1336,9 +1336,18 @@ class Handler(SimpleHTTPRequestHandler):
                 ctx=subprocess.run([docker,"context","show"],capture_output=True,text=True,timeout=10)
                 context=ctx.stdout.strip()
                 if ctx.returncode or context not in {"default","desktop-linux"}: raise ValueError("Local Docker context required.")
-                result=subprocess.run([docker,"--context",context,"image","ls","--digests","--format","{{.Repository}}@{{.Digest}}"],capture_output=True,text=True,timeout=20)
+                result=subprocess.run([docker,"--context",context,"image","ls","--digests","--format","{{json .}}"],capture_output=True,text=True,timeout=20)
                 if result.returncode: raise ValueError("Docker image discovery failed.")
-                self.send_json({"ok":True,"images":sorted({line.strip() for line in result.stdout.splitlines() if IMAGE_PATTERN.fullmatch(line.strip())})})
+                images={}
+                for line in result.stdout.splitlines():
+                    item=json.loads(line)
+                    repo=item.get("Repository","")
+                    digest=repo+"@"+item.get("Digest","")
+                    if not IMAGE_PATTERN.fullmatch(digest): continue
+                    tags=images.setdefault(digest,set())
+                    tag=item.get("Tag","")
+                    if tag and tag!="<none>": tags.add(repo+":"+tag)
+                self.send_json({"ok":True,"images":[{"digest":d,"tags":sorted(tags)} for d,tags in sorted(images.items())]})
             except Exception:self.send_json({"ok":False,"error":"Local Docker image discovery unavailable."},400)
             return
         if p.path=="/api/restore-job":
