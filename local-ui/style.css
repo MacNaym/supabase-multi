@@ -226,3 +226,6 @@ button:disabled{opacity:.55;cursor:not-allowed}
   .backup-grid{grid-template-columns:1fr}
   .backup-destination-row{grid-template-columns:1fr}
 }
+
+/* Backup & Restore sub-navigation */
+.backup-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0;padding-bottom:12px;border-bottom:1px solid #28323d}.backup-tabs button[aria-pressed=true]{border-color:#60a5fa;color:#93c5fd}.backup-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin:12px 0}.backup-summary p,.backup-source{padding:10px;border:1px solid #28323d;border-radius:8px;overflow-wrap:anywhere}.restore-trust{display:flex!important;align-items:center;gap:10px;margin:16px 0}.restore-trust input{width:auto!important;margin:0}.dashboard-section details{margin:12px 0}.dashboard-section summary{cursor:pointer}.dashboard-section progress{margin:12px 0}
