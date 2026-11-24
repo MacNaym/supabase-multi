@@ -1169,6 +1169,19 @@ def open_backup_folder(path):
     raise RuntimeError("Open folder is currently available on Windows only.")
 
 
+def validate_backup_selection(reg, body):
+    project = str(body.get("project") or "").strip()
+    account = str(body.get("account") or "").strip()
+    p = reg.get("projects", {}).get(project)
+    if not account or account not in reg.get("accounts", {}):
+        raise ValueError("Select a registered account first.")
+    if not p or p.get("account") != account:
+        raise ValueError("Selected project does not belong to the selected account.")
+    if not p.get("enabled", True):
+        raise ValueError("Project target is disabled.")
+    return project, p
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw): super().__init__(*a,directory=str(UI_DIR),**kw)
     def log_message(self,fmt,*args): sys.stdout.write("[ui] "+fmt%args+"\n")
@@ -1233,11 +1246,9 @@ class Handler(SimpleHTTPRequestHandler):
                 selected=select_backup_folder(body.get("initial_dir",""))
                 self.send_json({"ok":True,"selected":selected,"cancelled":not bool(selected)});return
             if path=="/api/backup-settings":
-                project=(body.get("project") or "").strip()
-                backup_dir=(body.get("backup_dir") or "").strip()
                 reg=read_registry()
-                p=reg.get("projects",{}).get(project)
-                if not p: raise ValueError("Project not found.")
+                project,p=validate_backup_selection(reg,body)
+                backup_dir=(body.get("backup_dir") or "").strip()
                 if backup_dir:
                     target=Path(backup_dir).expanduser()
                     target.mkdir(parents=True,exist_ok=True)
@@ -1247,13 +1258,11 @@ class Handler(SimpleHTTPRequestHandler):
                 write_registry(reg)
                 self.send_json({"ok":True,"message":"Backup destination saved.","project":project,"backup_dir":p.get("backup_dir","")});return
             if path=="/api/backup-create":
-                project=(body.get("project") or "").strip()
+                reg=read_registry()
+                project,p=validate_backup_selection(reg,body)
                 mode=(body.get("mode") or "full").strip().lower()
                 destination=(body.get("destination") or "").strip() or None
                 save_default=body.get("save_default") is True
-                reg=read_registry()
-                p=reg.get("projects",{}).get(project)
-                if not p: raise ValueError("Project not found.")
                 if destination:
                     target=Path(destination).expanduser()
                     target.mkdir(parents=True,exist_ok=True)
@@ -1264,7 +1273,8 @@ class Handler(SimpleHTTPRequestHandler):
                 result=backup_backend().backup_database(project,mode=mode,destination=destination)
                 self.send_json({"ok":True,"message":f"Backup {mode} completed for {project}.","result":result});return
             if path=="/api/backup-list":
-                project=(body.get("project") or "").strip()
+                reg=read_registry()
+                project,p=validate_backup_selection(reg,body)
                 destination=(body.get("destination") or "").strip() or None
                 result=backup_backend().list_database_backups(project,destination=destination)
                 self.send_json({"ok":True,"result":result});return
