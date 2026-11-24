@@ -189,7 +189,7 @@ def _project_public(p: dict[str, Any]) -> dict[str, Any]:
     # The API state never contains raw PAT values. Keep the MCP contract explicit.
     allowed = {
         "name","label","account","account_email","browser","login_method","project_ref","environment",
-        "enabled","read_only","token_env","token_ok","mcp","platform_status","platform_seen",
+        "enabled","read_only","token_env","token_ok","backup_dir","mcp","platform_status","platform_seen",
         "status_source","pat_status_error_kind","pat_status_error_detail"
     }
     return {k: p.get(k) for k in allowed if k in p}
