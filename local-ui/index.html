@@ -8,7 +8,7 @@
 </head>
 <body>
 <main class="app-shell">
-<header><div><div class="eyebrow">LOCAL CONTROL PANEL · V3.8.0 MCP PREVIEW</div><h1>Supabase Multi</h1><p><span data-i18n="header_subtitle">Separate accounts and projects · per-project PAT · CLI fallback · ready for end-to-end tests.</span></p></div><button id="refreshBtn" class="secondary" data-i18n="refresh">>Refresh</button></header>
+<header><div><div class="eyebrow">LOCAL CONTROL PANEL · V3.9.0 BACKUP</div><h1>Supabase Multi</h1><p><span data-i18n="header_subtitle">Separate accounts and projects · per-project PAT · CLI fallback · ready for end-to-end tests.</span></p></div><button id="refreshBtn" class="secondary" data-i18n="refresh">>Refresh</button></header>
 <section class="statusbar"><span id="rootPath" data-i18n="loading">>Loading...</span><span class="pill">127.0.0.1 only</span></section>
 
 <div class="workspace">
@@ -19,8 +19,9 @@
     <button class="nav-btn" data-view="project"><span>2</span><b data-i18n="nav_project">Connect database</b></button>
     <button class="nav-btn" data-view="auth"><span>3</span><b data-i18n="nav_auth">Authentication</b></button>
     <button class="nav-btn" data-view="scan"><span>4</span><b data-i18n="nav_scan">Scan account</b></button>
-    <button class="nav-btn" data-view="status"><span>5</span><b data-i18n="nav_status">Status</b></button>
-    <button class="nav-btn" data-view="guide"><span>6</span><b data-i18n="nav_guide">Guide</b></button>
+    <button class="nav-btn" data-view="backup"><span>5</span><b data-i18n="nav_backup">Backup</b></button>
+    <button class="nav-btn" data-view="status"><span>6</span><b data-i18n="nav_status">Status</b></button>
+    <button class="nav-btn" data-view="guide"><span>7</span><b data-i18n="nav_guide">Guide</b></button>
     <div class="sidebar-spacer"></div>
     <label class="language-picker">
       <span data-i18n="language">Language</span>
@@ -142,6 +143,49 @@
 <div id="discoveryEmpty" class="empty">No scan performed yet.</div><div id="discoveryResults" class="hidden"><div class="table-wrap"><table id="discoveryTable"></table></div><div class="row importbar"><button id="importSelectedBtn" data-i18n="import_selected">>Import selected</button><span class="muted">Operational PATs remain separate.</span></div></div></div>
     </section>
 
+    <section class="view-panel" data-view-panel="backup">
+      <div class="panel card">
+        <div class="section-head">
+          <div>
+            <div class="card-title"><h2 data-i18n="backup_title">Database backup</h2></div>
+            <p class="muted" data-i18n="backup_note">Create and verify local logical backups using the configured project ref and PAT.</p>
+          </div>
+          <button id="backupRefreshBtn" class="secondary" data-i18n="refresh">Refresh</button>
+        </div>
+
+        <div class="backup-grid">
+          <label><span data-i18n="project">Project</span><select id="backupProject"></select></label>
+          <label><span data-i18n="backup_mode">Backup type</span>
+            <select id="backupMode">
+              <option value="full" data-i18n="backup_full">Full — roles + schema + data</option>
+              <option value="schema" data-i18n="backup_schema">Schema only</option>
+              <option value="data" data-i18n="backup_data">Data only</option>
+            </select>
+          </label>
+          <label class="backup-destination-label"><span data-i18n="backup_destination">Destination</span>
+            <div class="backup-destination-row">
+              <input id="backupDestination" placeholder="%USERPROFILE%\SupabaseMultiBackups">
+              <button type="button" id="backupChooseFolderBtn" class="secondary" data-i18n="choose_folder">Choose folder</button>
+            </div>
+          </label>
+        </div>
+
+        <div class="row backup-actions">
+          <button id="backupCreateBtn" data-i18n="create_backup">Create backup</button>
+          <button id="backupSaveDestinationBtn" class="secondary" data-i18n="save_default_destination">Save as default</button>
+          <span id="backupCredentialHint" class="muted" data-i18n="backup_credential_hint">Uses project ref + project PAT. Database password is only a fallback.</span>
+        </div>
+
+        <section class="dashboard-section">
+          <div class="section-head">
+            <div><h3 data-i18n="backup_history">Backup history</h3><p id="backupRootHint" class="muted">—</p></div>
+          </div>
+          <div id="backupEmpty" class="empty" data-i18n="backup_none">No backups found.</div>
+          <div id="backupHistoryWrap" class="table-wrap hidden"><table id="backupHistoryTable"></table></div>
+        </section>
+      </div>
+    </section>
+
     <section class="view-panel" data-view-panel="status">
       <div class="panel card"><div class="section-head"><div><div class="card-title"><h2 data-i18n="status_title">Current status</h2><button type="button" class="help-btn" data-help="status">?</button></div><p class="muted"><span data-i18n="status_note">Tokens are never displayed. Supabase status is checked at startup and on every refresh. Last check:</span> <span id="platformCheckedAt">—</span></p></div><div class="row"><button id="syncBtn">MCP Sync</button><button id="doctorBtn" class="secondary">Doctor</button><button id="allBtn">Sync + Doctor</button></div></div>
 <h3>Account</h3><div class="table-wrap"><table id="accountsTable"></table></div><h3>Progetti</h3><div class="table-wrap"><table id="projectsTable"></table></div>
@@ -203,7 +247,7 @@ PROJECT
   </section>
 </div>
 
-<footer>v3.8.0 MCP Preview — AI control plane.</footer>
+<footer>v3.9.0 Backup — AI control plane.</footer>
 </main>
 <div id="loginInfoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loginInfoTitle">
   <div class="modal-card login-card">

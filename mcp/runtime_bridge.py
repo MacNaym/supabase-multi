@@ -22,7 +22,7 @@ from runtime_identity import runtime_payload, source_fingerprint
 
 CONTROL_PLANE = ROOT / "local-ui" / "server.py"
 BASE_URL = os.environ.get("SUPABASE_MULTI_URL", "http://127.0.0.1:8765").rstrip("/")
-LIVE_CAPABILITY_GENERATION = "2026-11-24.1"
+LIVE_CAPABILITY_GENERATION = "2026-11-24.2"
 
 LIVE_CAPABILITIES: dict[str, dict[str, Any]] = {
     "backup_database": {
@@ -32,6 +32,11 @@ LIVE_CAPABILITIES: dict[str, dict[str, Any]] = {
     },
     "verify_database_backup": {
         "description": "Verify a Supabase Multi backup manifest, file sizes, and SHA-256 hashes.",
+        "confirmation_required": False,
+        "write_capable": False,
+    },
+    "list_database_backups": {
+        "description": "List local Supabase Multi database backups for one target.",
         "confirmation_required": False,
         "write_capable": False,
     },
@@ -255,9 +260,17 @@ def invoke_live_capability(
                 if arguments.get("destination")
                 else None
             ),
-            db_url_env=(
-                str(arguments.get("db_url_env")).strip()
-                if arguments.get("db_url_env")
+        )
+
+    if operation == "list_database_backups":
+        target = str(arguments.get("target") or "").strip()
+        if not target:
+            raise RuntimeError("list_database_backups requires arguments.target.")
+        return _headless_module().list_database_backups(
+            target,
+            destination=(
+                str(arguments.get("destination")).strip()
+                if arguments.get("destination")
                 else None
             ),
         )

@@ -17,7 +17,7 @@
       "project_ref": "abcdefghijklmnopqrst",
       "environment": "production",
       "token_env": "SUPABASE_PAT_EXAMPLE_PROD",
-      "db_url_env": "SUPABASE_DB_URL_EXAMPLE_PROD",
+      "backup_dir": "C:\\Backups\\Supabase",
       "mcp": "sb_example-prod",
       "read_only": false,
       "enabled": true

@@ -11,8 +11,8 @@ const loginLabel=m=>({classic:'Email/password',github:'GitHub',google:'Google/Gm
 let currentLang=localStorage.getItem("supabaseMultiLang")||"en";
 const I18N={
   en:{
-    nav_dashboard:"Dashboard",nav_account:"Connect account",nav_project:"Connect database",nav_auth:"Authentication",nav_scan:"Scan account",nav_status:"Status",nav_guide:"Guide",language:"Language",diagnostics_title:"Diagnostics / Logs",diagnostics_note:"Technical output for troubleshooting.",orphan_title:"Orphaned secrets",orphan_note:"Supabase PAT environment variables no longer referenced by any account or project. Secret values are never shown.",clean_all_orphans:"Clean all",no_orphans:"No orphaned Supabase secret variables found.",secret_variable:"Environment variable",confirm_delete_orphan:"Delete orphaned secret variable",confirm_clean_all_orphans:"Delete all orphaned Supabase secret variables?",
-    dashboard_title:"Dashboard",dashboard_note:"Operational overview of your Supabase accounts and databases.",last_check:"Last check:",db_total:"Databases",db_active:"Active",db_paused:"Paused",db_attention:"Need attention",accounts_total:"Accounts",cli_connected:"CLI connected",project_pats:"Project PATs",orphan_secrets_count:"Orphaned secrets",needs_attention:"Needs attention",needs_attention_note:"Only items that may require action are shown here.",all_good:"Nothing needs attention.",database_overview:"Database overview",issue_paused:"Database paused",issue_status_unknown:"Remote status unknown",issue_pat_missing:"Project PAT missing",issue_account_missing:"Account missing",issue_cli_missing:"Account CLI disconnected",issue_identity_incomplete:"Account identity incomplete",issue_orphans:"Orphaned secrets present",account_title:"Account",project_title:"Project / manual database",auth_title:"Authentication",scan_title:"Scan Supabase account",status_title:"Current status",guide_title:"Complete guide",
+    nav_dashboard:"Dashboard",nav_account:"Connect account",nav_project:"Connect database",nav_auth:"Authentication",nav_scan:"Scan account",nav_backup:"Backup",nav_status:"Status",nav_guide:"Guide",language:"Language",diagnostics_title:"Diagnostics / Logs",diagnostics_note:"Technical output for troubleshooting.",orphan_title:"Orphaned secrets",orphan_note:"Supabase PAT environment variables no longer referenced by any account or project. Secret values are never shown.",clean_all_orphans:"Clean all",no_orphans:"No orphaned Supabase secret variables found.",secret_variable:"Environment variable",confirm_delete_orphan:"Delete orphaned secret variable",confirm_clean_all_orphans:"Delete all orphaned Supabase secret variables?",
+    dashboard_title:"Dashboard",dashboard_note:"Operational overview of your Supabase accounts and databases.",last_check:"Last check:",db_total:"Databases",db_active:"Active",db_paused:"Paused",db_attention:"Need attention",accounts_total:"Accounts",cli_connected:"CLI connected",project_pats:"Project PATs",orphan_secrets_count:"Orphaned secrets",needs_attention:"Needs attention",needs_attention_note:"Only items that may require action are shown here.",all_good:"Nothing needs attention.",database_overview:"Database overview",issue_paused:"Database paused",issue_status_unknown:"Remote status unknown",issue_pat_missing:"Project PAT missing",issue_account_missing:"Account missing",issue_cli_missing:"Account CLI disconnected",issue_identity_incomplete:"Account identity incomplete",issue_orphans:"Orphaned secrets present",account_title:"Account",project_title:"Project / manual database",auth_title:"Authentication",scan_title:"Scan Supabase account",status_title:"Current status",backup_title:"Database backup",backup_note:"Create and verify local logical backups using the configured project ref and PAT.",backup_mode:"Backup type",backup_full:"Full — roles + schema + data",backup_schema:"Schema only",backup_data:"Data only",backup_destination:"Destination",choose_folder:"Choose folder",create_backup:"Create backup",save_default_destination:"Save as default",backup_credential_hint:"Uses project ref + project PAT. Database password is only a fallback.",backup_history:"Backup history",backup_none:"No backups found.",verify_backup:"Verify",open_folder:"Open folder",guide_title:"Complete guide",
     discovery_model_title:"Discovery PAT model",discovery_model_note:"Use the account-wide PAT only to discover projects. Use a separate scoped PAT for each project's operational access.",
     header_subtitle:"Separate accounts and projects · per-project PAT · CLI fallback · ready for end-to-end tests.",refresh:"Refresh",loading:"Loading…",
     account_identity_note:"Required identity: Supabase email + login method. Existing accounts can remain incomplete until you fill them in.",existing_account:"Existing account",load_account:"Load account",account_alias:"Account alias",account_label:"Account name / label",supabase_email:"Supabase email",login_method:"Login method",not_specified:"Not specified",account_browser:"Account browser",system_default:"System default",select_account:"— Select account —",env_production:"Production",env_development:"Development",env_staging:"Staging",
@@ -30,8 +30,8 @@ const I18N={
     guide_full:`<h3>How it works</h3><p>An account represents the Supabase identity you use to sign in. Projects are separate resources attached to an account.</p><ol><li>Create or load an account and record its email/login method.</li><li>Optionally add an account-wide Discovery PAT with <code>Projects (account-wide): Read</code>, or use a Supabase CLI named profile for discovery.</li><li>Scan the account and import the projects you want to manage.</li><li>For each project, configure a dedicated scoped PAT and its Windows environment-variable name.</li><li>Use <strong>Verify access</strong> to confirm the scoped PAT can reach that project.</li><li>Run <strong>MCP Sync</strong> and <strong>Doctor</strong> after configuration changes.</li></ol><h3>Security model</h3><p>PAT values are never written to the registry JSON. Only environment-variable names are stored. Browser sessions live in isolated local browser profiles.</p>`
   },
   it:{
-    nav_dashboard:"Dashboard",nav_account:"Connetti account",nav_project:"Connetti database",nav_auth:"Autenticazione",nav_scan:"Scansiona account",nav_status:"Stato",nav_guide:"Guida",language:"Lingua",diagnostics_title:"Diagnostica / Log",diagnostics_note:"Output tecnico per la risoluzione dei problemi.",orphan_title:"Segreti orfani",orphan_note:"Variabili ambiente PAT Supabase non più referenziate da alcun account o progetto. I valori segreti non vengono mai mostrati.",clean_all_orphans:"Pulisci tutti",no_orphans:"Nessuna variabile segreta Supabase orfana trovata.",secret_variable:"Variabile ambiente",confirm_delete_orphan:"Eliminare la variabile segreta orfana",confirm_clean_all_orphans:"Eliminare tutte le variabili segrete Supabase orfane?",
-    dashboard_title:"Dashboard",dashboard_note:"Riepilogo operativo degli account e dei database Supabase.",last_check:"Ultimo controllo:",db_total:"Database",db_active:"Attivi",db_paused:"In pausa",db_attention:"Da controllare",accounts_total:"Account",cli_connected:"CLI connessi",project_pats:"PAT progetto",orphan_secrets_count:"Segreti orfani",needs_attention:"Da controllare",needs_attention_note:"Qui compaiono solo gli elementi che potrebbero richiedere un intervento.",all_good:"Nessun elemento richiede attenzione.",database_overview:"Riepilogo database",issue_paused:"Database in pausa",issue_status_unknown:"Stato remoto sconosciuto",issue_pat_missing:"PAT progetto mancante",issue_account_missing:"Account mancante",issue_cli_missing:"CLI account disconnessa",issue_identity_incomplete:"Identità account incompleta",issue_orphans:"Sono presenti segreti orfani",account_title:"Account",project_title:"Progetto / database manuale",auth_title:"Autenticazione",scan_title:"Scansiona account Supabase",status_title:"Stato corrente",guide_title:"Guida completa",
+    nav_dashboard:"Dashboard",nav_account:"Connetti account",nav_project:"Connetti database",nav_auth:"Autenticazione",nav_scan:"Scansiona account",nav_backup:"Backup",nav_status:"Stato",nav_guide:"Guida",language:"Lingua",diagnostics_title:"Diagnostica / Log",diagnostics_note:"Output tecnico per la risoluzione dei problemi.",orphan_title:"Segreti orfani",orphan_note:"Variabili ambiente PAT Supabase non più referenziate da alcun account o progetto. I valori segreti non vengono mai mostrati.",clean_all_orphans:"Pulisci tutti",no_orphans:"Nessuna variabile segreta Supabase orfana trovata.",secret_variable:"Variabile ambiente",confirm_delete_orphan:"Eliminare la variabile segreta orfana",confirm_clean_all_orphans:"Eliminare tutte le variabili segrete Supabase orfane?",
+    dashboard_title:"Dashboard",dashboard_note:"Riepilogo operativo degli account e dei database Supabase.",last_check:"Ultimo controllo:",db_total:"Database",db_active:"Attivi",db_paused:"In pausa",db_attention:"Da controllare",accounts_total:"Account",cli_connected:"CLI connessi",project_pats:"PAT progetto",orphan_secrets_count:"Segreti orfani",needs_attention:"Da controllare",needs_attention_note:"Qui compaiono solo gli elementi che potrebbero richiedere un intervento.",all_good:"Nessun elemento richiede attenzione.",database_overview:"Riepilogo database",issue_paused:"Database in pausa",issue_status_unknown:"Stato remoto sconosciuto",issue_pat_missing:"PAT progetto mancante",issue_account_missing:"Account mancante",issue_cli_missing:"CLI account disconnessa",issue_identity_incomplete:"Identità account incompleta",issue_orphans:"Sono presenti segreti orfani",account_title:"Account",project_title:"Progetto / database manuale",auth_title:"Autenticazione",scan_title:"Scansiona account Supabase",status_title:"Stato corrente",backup_title:"Backup database",backup_note:"Crea e verifica backup logici locali usando project ref e PAT già configurati.",backup_mode:"Tipo di backup",backup_full:"Completo — ruoli + schema + dati",backup_schema:"Solo schema",backup_data:"Solo dati",backup_destination:"Destinazione",choose_folder:"Scegli cartella",create_backup:"Crea backup",save_default_destination:"Salva come predefinita",backup_credential_hint:"Usa project ref + PAT del progetto. La password DB è solo un fallback.",backup_history:"Cronologia backup",backup_none:"Nessun backup trovato.",verify_backup:"Verifica",open_folder:"Apri cartella",guide_title:"Guida completa",
     discovery_model_title:"Modello Discovery PAT",discovery_model_note:"Usa il PAT account-wide solo per scoprire i progetti. Usa un PAT scoped separato per l'accesso operativo di ogni progetto.",
     header_subtitle:"Account e progetti separati · PAT per progetto · fallback CLI · pronto per i test end-to-end.",refresh:"Aggiorna",loading:"Caricamento…",
     account_identity_note:"Identità obbligatoria: email Supabase + metodo login. Gli account esistenti possono restare incompleti finché non inserisci i dati.",existing_account:"Account esistente",load_account:"Carica account",account_alias:"Alias account",account_label:"Nome account / etichetta",supabase_email:"Email Supabase",login_method:"Metodo login",not_specified:"Non specificato",account_browser:"Browser account",system_default:"Predefinito di sistema",select_account:"— Seleziona account —",env_production:"Produzione",env_development:"Sviluppo",env_staging:"Staging",
@@ -69,6 +69,7 @@ function showView(name){
   document.querySelectorAll(".view-panel").forEach(p=>p.classList.toggle("active",p.dataset.viewPanel===name));
   document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===name));
   window.scrollTo({top:0,behavior:"smooth"});
+  if(name==="backup")refreshBackupHistory();
 }
 function bindNavigation(){
   document.querySelectorAll(".nav-btn").forEach(btn=>btn.onclick=()=>showView(btn.dataset.view));
@@ -181,7 +182,7 @@ function renderDashboard(data){
 }
 
 async function refresh(){try{applyLanguage();
-const{data}=await api("/api/state");state=data;$("#rootPath").textContent=data.root;renderDashboard(data);
+const{data}=await api("/api/state");state=data;$("#rootPath").textContent=data.root;renderDashboard(data);renderBackupProjectSelector(data);
 ["authAccount","discoverAccount","projectAccount"].forEach(function(id){
   const el=$("#"+id);
   const previous=el.value;
@@ -563,6 +564,133 @@ $("#projectForm").onsubmit=async e=>{
     log(t("save_error")+" "+x.message);
   }
 };
+
+
+let lastBackupProject="";
+
+function renderBackupProjectSelector(data){
+  const el=$("#backupProject");
+  if(!el)return;
+  const projects=data.projects||[];
+  const previous=el.value||lastBackupProject;
+  opts(el,projects);
+  if(previous && projects.some(function(p){return p.name===previous;}))el.value=previous;
+  lastBackupProject=el.value||"";
+  const p=projects.find(function(x){return x.name===el.value;});
+  if(p && !($("#backupDestination").value||"").trim()){
+    $("#backupDestination").value=p.backup_dir||"";
+  }
+}
+
+async function refreshBackupHistory(){
+  const project=$("#backupProject") ? $("#backupProject").value : "";
+  if(!project)return;
+  try{
+    const destination=($("#backupDestination") ? $("#backupDestination").value : "").trim();
+    const r=await api("/api/backup-list",{project:project,destination:destination||null});
+    const result=r.result||{};
+    const backups=result.backups||[];
+    $("#backupRootHint").textContent=result.root||"—";
+    if(!backups.length){
+      $("#backupEmpty").classList.remove("hidden");
+      $("#backupHistoryWrap").classList.add("hidden");
+      $("#backupHistoryTable").innerHTML="";
+      return;
+    }
+    $("#backupEmpty").classList.add("hidden");
+    $("#backupHistoryWrap").classList.remove("hidden");
+    let rows="";
+    backups.forEach(function(b){
+      rows += "<tr>"+
+        "<td>"+esc(b.created_at||"—")+"</td>"+
+        "<td>"+esc(b.mode||"—")+"</td>"+
+        "<td>"+esc(b.files||0)+"</td>"+
+        "<td><code>"+esc(b.backup_dir||"")+"</code></td>"+
+        "<td class=\"actions\">"+
+          "<button class=\"secondary backup-verify-btn\" data-path=\""+esc(b.backup_dir||"")+"\">"+t("verify_backup")+"</button>"+
+          "<button class=\"secondary backup-open-btn\" data-path=\""+esc(b.backup_dir||"")+"\">"+t("open_folder")+"</button>"+
+        "</td>"+
+      "</tr>";
+    });
+    $("#backupHistoryTable").innerHTML=
+      "<thead><tr><th>Date</th><th>"+t("backup_mode")+"</th><th>Files</th><th>Path</th><th></th></tr></thead><tbody>"+
+      rows+
+      "</tbody>";
+    bindBackupHistoryButtons();
+  }catch(e){
+    show(e.message,true);
+  }
+}
+
+function bindBackupHistoryButtons(){
+  document.querySelectorAll(".backup-verify-btn").forEach(function(btn){
+    btn.onclick=async function(){
+      try{
+        const r=await api("/api/backup-verify",{path:btn.dataset.path});
+        const ok=!!(r.result&&r.result.ok);
+        show(ok?"Backup verificato: hash e dimensioni corretti.":"Backup NON valido: almeno un file manca o è stato modificato.",!ok);
+        log(JSON.stringify(r.result,null,2));
+      }catch(e){show(e.message,true)}
+    };
+  });
+  document.querySelectorAll(".backup-open-btn").forEach(function(btn){
+    btn.onclick=async function(){
+      try{await api("/api/backup-open",{path:btn.dataset.path})}
+      catch(e){show(e.message,true)}
+    };
+  });
+}
+
+if($("#backupProject"))$("#backupProject").onchange=async function(){
+  lastBackupProject=$("#backupProject").value;
+  const p=(state.projects||[]).find(function(x){return x.name===lastBackupProject;});
+  $("#backupDestination").value=(p&&p.backup_dir)||"";
+  await refreshBackupHistory();
+};
+
+if($("#backupChooseFolderBtn"))$("#backupChooseFolderBtn").onclick=async function(){
+  try{
+    const r=await api("/api/backup-pick-folder",{initial_dir:($("#backupDestination").value||"").trim()});
+    if(r.selected)$("#backupDestination").value=r.selected;
+  }catch(e){show(e.message,true)}
+};
+
+if($("#backupSaveDestinationBtn"))$("#backupSaveDestinationBtn").onclick=async function(){
+  const project=$("#backupProject").value;
+  if(!project){show(t("project_not_found"),true);return}
+  try{
+    const r=await api("/api/backup-settings",{project:project,backup_dir:($("#backupDestination").value||"").trim()});
+    show(r.message);
+    await refresh();
+    await refreshBackupHistory();
+  }catch(e){show(e.message,true)}
+};
+
+if($("#backupCreateBtn"))$("#backupCreateBtn").onclick=async function(){
+  const project=$("#backupProject").value;
+  const mode=$("#backupMode").value;
+  const destination=($("#backupDestination").value||"").trim();
+  if(!project){show(t("project_not_found"),true);return}
+  const button=$("#backupCreateBtn");
+  button.disabled=true;
+  const oldText=button.textContent;
+  button.textContent=currentLang==="it"?"Backup in corso…":"Backing up…";
+  log("Backup "+mode+" in corso per "+project+"…");
+  try{
+    const r=await api("/api/backup-create",{project:project,mode:mode,destination:destination||null,save_default:false});
+    show(r.message+"\n"+r.result.backup_dir);
+    log(JSON.stringify(r.result,null,2));
+    await refreshBackupHistory();
+  }catch(e){
+    show(e.message,true);
+    log(e.message);
+  }finally{
+    button.disabled=false;
+    button.textContent=oldText;
+  }
+};
+
+if($("#backupRefreshBtn"))$("#backupRefreshBtn").onclick=refreshBackupHistory;
 
 async function action(path){log("Esecuzione...");try{const r=await api(path,{});let t=r.message+"\n\n";if(r.result)t+=(r.result.stdout||"")+(r.result.stderr||"");if(r.sync)t+="--- SYNC ---\n"+(r.sync.stdout||"")+(r.sync.stderr||"")+"\n--- DOCTOR ---\n"+(r.doctor.stdout||"")+(r.doctor.stderr||"");log(t);show(r.message);await refresh()}catch(e){log(e.message);show(e.message,true)}}
 if($("#dashboardRefreshBtn"))$("#dashboardRefreshBtn").onclick=refresh;$("#syncBtn").onclick=()=>action("/api/sync");$("#doctorBtn").onclick=()=>action("/api/doctor");$("#allBtn").onclick=()=>action("/api/sync-doctor");$("#refreshBtn").onclick=refresh;$("#clearOutputBtn").onclick=()=>log(t("ready_log"));bindNavigation();refresh();

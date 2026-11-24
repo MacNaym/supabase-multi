@@ -4,9 +4,11 @@
 - Live `backup_database` capability with `schema`, `data`, and `full` modes.
 - Full logical backups create roles, schema, data, and a SHA-256 manifest.
 - Live `verify_database_backup` capability detects missing or modified backup files.
-- Database connection strings are resolved only from environment variables and are never returned or persisted as raw values.
-- Default backup location is `~/SupabaseMultiBackups`, with `SUPABASE_MULTI_BACKUP_DIR` and per-call destination overrides.
-- Backup runtime uses the current Supabase CLI `db dump --remote=...` flow.
+- Backup runtime uses `db dump --remote=<project_ref>` with the existing project PAT passed as `SUPABASE_ACCESS_TOKEN`; no database URL is required.
+- Optional database-password fallback uses `SUPABASE_DB_PASSWORD_<TARGET>` (or project `db_password_env`) only if temporary login fails.
+- Added `list_database_backups` live capability and per-project default `backup_dir`.
+- Added a local Backup dashboard with native folder picker, create/list/verify/open-folder actions, and per-project destination persistence.
+- Default backup location remains `~/SupabaseMultiBackups`, with `SUPABASE_MULTI_BACKUP_DIR` and per-call destination overrides.
 
 ﻿# Changelog
 

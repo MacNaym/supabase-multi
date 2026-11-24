@@ -35,7 +35,8 @@ It provides:
 - automatic project status checks with PAT-first / CLI-fallback logic;
 - MCP target generation and diagnostics;
 - repository-to-project routing;
-- an MCP server exposing the control plane to AI agents.
+- an MCP server exposing the control plane to AI agents;
+- local logical database backups with selectable per-project destinations and integrity verification.
 
 Supabase Multi does **not** replace the official Supabase MCP server. It solves a different problem:
 
@@ -211,6 +212,7 @@ PROJECT
 ├─ project_ref
 ├─ environment
 ├─ operational PAT environment variable
+├─ optional backup_dir
 ├─ MCP target
 ├─ read_only
 └─ enabled
@@ -1024,6 +1026,7 @@ Current live capabilities include SQL, Edge Functions, and database backups:
 - `deploy_edge_function`
 - `delete_edge_function`
 - `backup_database`
+- `list_database_backups`
 - `verify_database_backup`
 
 The first three proxy the official Supabase MCP. Supabase does not currently expose an official MCP delete-function tool, so `delete_edge_function` uses the documented Supabase Management API delete endpoint with the same project-scoped PAT. Deploy/delete require `confirm=true` and refuse Supabase Multi targets configured read-only.
@@ -1033,7 +1036,9 @@ Creates and verifies local logical Postgres backups without adding static MCP to
 
 `backup_database` supports `schema`, `data`, and `full` modes. Full mode writes roles, schema, data, and a manifest with SHA-256 hashes. It uses the Supabase CLI `db dump --remote=...` flow and reads the database connection string from an environment variable; raw connection strings are never stored in the registry or returned to agents.
 
-Connection-string environment resolution is: explicit `db_url_env` argument, project `db_url_env`, then `SUPABASE_DB_URL_<TARGET>`. The default backup root is `~/SupabaseMultiBackups`, overridable with `SUPABASE_MULTI_BACKUP_DIR` or a per-call destination.
+Backups target the configured `project_ref` directly with the Supabase CLI and pass the existing project PAT as `SUPABASE_ACCESS_TOKEN`, allowing the CLI to create a temporary database login. No database URL is required. If that flow fails, an optional password fallback is read from `SUPABASE_DB_PASSWORD_<TARGET>` or project `db_password_env`.
+
+The default backup root is the project `backup_dir` saved in the dashboard, then `SUPABASE_MULTI_BACKUP_DIR`, then `~/SupabaseMultiBackups`; a per-call destination can override all of them. The dashboard Backup view can choose a folder, save it per project, create backups, list history, verify SHA-256 hashes, and open the backup folder.
 
 These backups do not include the actual objects stored through Supabase Storage.
 
