@@ -1,3 +1,8 @@
+## Supabase Multi 3.9.1 (development)
+
+- Single product version from runtime_identity; dashboard and MCP report the same version. Backup module numbering and external Supabase CLI version are separate.
+- 3.9.0 was the dashboard label for Backup V1.2, not the Supabase CLI version. Real backup tested with CLI 3.3.0.
+
 ## Backup V1.2
 
 - Automatic IPv4 session pooler fallback with project-scoped API lookup and temporary CLI login; regression coverage for routing and error redaction.
