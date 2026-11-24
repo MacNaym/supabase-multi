@@ -1086,6 +1086,7 @@ def backup_database(
             "credential_mode": credential_mode,
             "token_env": token_env,
             "supabase_cli_version": cli_version,
+            "postgres_source_version": backup_postgres_version(backup_dir),
             "files": files,
         }
         manifest_path = backup_dir / "manifest.json"
@@ -1245,6 +1246,25 @@ def verify_database_backup(path: str) -> dict[str, Any]:
     }
 
 
+def backup_postgres_version(folder: Path) -> str | None:
+    """Read source version from pg_dump headers, never from the pg_dump client version."""
+    versions = set()
+    for name in ("schema.sql", "data.sql", "roles.sql"):
+        path = folder / name
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            with path.open("rb") as stream:
+                header = stream.read(65536).decode("utf-8", errors="replace")
+            for line in header.splitlines()[:100]:
+                match = re.fullmatch(r"-- Dumped from database version ([0-9]{1,2}(?:\.[0-9]{1,3}){1,3})(?:\s.*)?", line)
+                if match:
+                    versions.add(match.group(1))
+        except OSError:
+            continue
+    return next(iter(versions)) if len(versions) == 1 else None
+
+
 def validate_database_backup(path: str) -> dict[str, Any]:
     """Non-executing, streaming heuristic checks. Never return SQL contents."""
     try:
@@ -1270,6 +1290,8 @@ def validate_database_backup(path: str) -> dict[str, Any]:
         return report
     # Free-form manifest metadata is deliberately not returned: a backup is
     # external/untrusted input and reports must not become a secret/SQL echo.
+    report["postgres_source_version"] = backup_postgres_version(Path(integrity["backup_dir"]))
+    report["postgres_version_source"] = "dump-header" if report["postgres_source_version"] else "unknown"
     report["total_bytes"] = sum(item["bytes"] for item in integrity["files"])
     report["integrity_fingerprint"] = hashlib.sha256(
         json.dumps([(item["name"], item["sha256"]) for item in integrity["files"]], separators=(",", ":")).encode("utf-8")
