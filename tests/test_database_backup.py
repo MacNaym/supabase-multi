@@ -416,3 +416,50 @@ def test_backup_job_duplicate_and_completion(monkeypatch, tmp_path):
         release.set()
     assert finished.wait(5)
     assert ui.backup_job_snapshot()["status"] == "completed"
+
+
+def make_validation_fixture(module, tmp_path, mode="full"):
+    names = {"full":["roles.sql","schema.sql","data.sql"], "schema":["schema.sql"], "data":["data.sql"]}[mode]
+    files=[]
+    for name in names:
+        path=tmp_path/name
+        path.write_text("-- PostgreSQL database dump\nSET statement_timeout = 0;\n", encoding="utf-8")
+        files.append({"name":name,"bytes":path.stat().st_size,"sha256":module._sha256_file(path)})
+    manifest={"format":"supabase-multi-backup-v1","mode":mode,"project":"example","files":files}
+    (tmp_path/"manifest.json").write_text(json.dumps(manifest),encoding="utf-8")
+    return manifest
+
+
+@pytest.mark.parametrize("mode",["full","schema","data"])
+def test_advanced_validation_legacy_manifest(tmp_path, mode):
+    module=load_module()
+    make_validation_fixture(module,tmp_path,mode)
+    result=module.validate_database_backup(str(tmp_path))
+    assert result["ok"] and result["integrity_ok"] and result["structure_ok"]
+    assert result["restore_tested"] is False
+    assert result["full_backup"] == (mode=="full")
+
+
+@pytest.mark.parametrize("change",["missing","duplicate","traversal","bad_hash","modified","empty","binary","not_sql"])
+def test_advanced_validation_rejects_bad_backup(tmp_path,change):
+    module=load_module()
+    manifest=make_validation_fixture(module,tmp_path)
+    item=manifest["files"][0]
+    path=tmp_path/item["name"]
+    if change=="missing": path.unlink()
+    elif change=="duplicate": manifest["files"].append(dict(item))
+    elif change=="traversal": item["name"]="../roles.sql"
+    elif change=="bad_hash": item["sha256"]="bad"
+    elif change=="modified": path.write_text("changed",encoding="utf-8")
+    else:
+        path.write_bytes({"empty":b"","binary":b"SET x=1;\x00","not_sql":b"not SQL"}[change])
+        item.update(bytes=path.stat().st_size,sha256=module._sha256_file(path))
+    (tmp_path/"manifest.json").write_text(json.dumps(manifest),encoding="utf-8")
+    assert module.validate_database_backup(str(tmp_path))["ok"] is False
+
+
+def test_validation_does_not_execute_sql(tmp_path,monkeypatch):
+    module=load_module()
+    make_validation_fixture(module,tmp_path)
+    monkeypatch.setattr(module.subprocess,"run",lambda *a,**kw: pytest.fail("Validation executed a process"))
+    assert module.validate_database_backup(str(tmp_path))["ok"]
