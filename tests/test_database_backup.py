@@ -21,6 +21,7 @@ def load_module():
 
 
 def install_project(monkeypatch, module, *, backup_dir=None, db_password_env=None):
+    monkeypatch.setattr(module, "_backup_preflight", lambda cli: None)
     project = {
         "enabled": True,
         "read_only": False,
@@ -259,3 +260,38 @@ def test_list_database_backups(monkeypatch, tmp_path):
     assert listed["count"] == 1
     assert listed["backups"][0]["backup_dir"] == created["backup_dir"]
     assert listed["backups"][0]["mode"] == "schema"
+
+
+def test_backup_preflight_rejects_old_cli(monkeypatch):
+    module = load_module()
+    monkeypatch.setattr(module.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout="--linked", stderr=""))
+    with pytest.raises(RuntimeError, match="CLI v3"):
+        module._backup_preflight("supabase")
+
+
+def test_backup_preflight_rejects_stopped_docker(monkeypatch):
+    module = load_module()
+    monkeypatch.setattr(module.shutil, "which", lambda name: name)
+    def run(command, **kwargs):
+        if command[0] == "supabase":
+            return SimpleNamespace(returncode=0, stdout="--remote", stderr="")
+        return SimpleNamespace(returncode=1, stdout="", stderr="engine unavailable")
+    monkeypatch.setattr(module.subprocess, "run", run)
+    with pytest.raises(RuntimeError, match="Docker engine"):
+        module._backup_preflight("supabase")
+
+
+def test_profile_error_does_not_trigger_password_fallback(monkeypatch, tmp_path):
+    module = load_module()
+    install_project(monkeypatch, module)
+    fake_cli(monkeypatch, module, password_available=True)
+    calls = []
+    def fail(command, **kwargs):
+        calls.append(command)
+        return SimpleNamespace(returncode=1, stdout="", stderr='failed to read profile: unsupported config file type "pes84"')
+    monkeypatch.setattr(module.subprocess, "run", fail)
+    with pytest.raises(RuntimeError, match="unsupported config"):
+        module.backup_database("example-prod", mode="schema", destination=str(tmp_path))
+    assert len(calls) == 1
+    assert "--password" not in calls[0]
+    assert not any(tmp_path.rglob("manifest.json"))
