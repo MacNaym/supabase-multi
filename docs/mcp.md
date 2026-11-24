@@ -127,3 +127,7 @@ Backups default to `auto`: try the exact project ref first, then resolve its pri
 ## Dashboard backup jobs (V1.3)
 
 The dashboard uses `POST /api/backup-start` and polls `GET /api/backup-job`. The server retains the latest job in memory, so browser refresh does not lose its status while the server remains running. Progress counts completed phases, not percentage of database bytes. File sizes may remain unchanged while the CLI works. Server reachability is not proof of dump activity. One dashboard job at a time; MCP backup calls retain their synchronous behavior and are not tracked by this dashboard job manager. Do not restart the server during a backup. Job status is not durable across process restarts. Each CLI dump has a one-hour timeout.
+
+### Backup validation and import (3.10.0 development)
+
+Select Import backup in the Backup tab to choose an existing folder containing manifest.json. This is a read-only in-place import for inspection, not a file copy or a database restore. Verify in history also runs advanced validation. The report includes source metadata, SHA-256, file sizes and heuristic UTF-8/SQL text checks. No SQL is executed. Validating a dump is not proof of authenticity, safety or restorability; only use trusted dumps. Partial backups can pass validation but are not full restore candidates. No PAT is needed for local validation. Revalidate before any future restore.
