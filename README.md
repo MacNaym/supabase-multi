@@ -20,6 +20,8 @@
 
 # Supabase Multi
 
+Product version: the runtime reports the authoritative installed version (`runtime_identity.APP_VERSION`), shown in the dashboard and MCP. Backup feature revisions and the external Supabase CLI version are independent. Development branch 3.9.1 follows dashboard 3.9.0; CLI 3.3.0 was used in the first successful full backup test.
+
 > **A local Supabase control plane for humans and AI agents managing multiple accounts and projects.**
 
 Supabase Multi is a local Windows control plane for people who work with more than one Supabase account or project and want both humans and AI agents to use the right project, credentials, CLI profile, browser profile, and MCP target without guessing.
