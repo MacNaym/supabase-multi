@@ -1182,6 +1182,78 @@ def validate_backup_selection(reg, body):
     return project, p
 
 
+BACKUP_JOB_LOCK = threading.Lock()
+BACKUP_JOB = None
+
+
+def backup_job_snapshot():
+    with BACKUP_JOB_LOCK:
+        if BACKUP_JOB is None:
+            return None
+        job = {k: v for k, v in BACKUP_JOB.items() if k != "_folder"}
+        folder = BACKUP_JOB.get("_folder")
+    job["elapsed_seconds"] = max(0, int((job.get("finished_at") or time.time()) - job["started_at"]))
+    job["server_time"] = time.time()
+    job["bytes_written"] = 0
+    if folder:
+        for name in ("roles.sql", "schema.sql", "data.sql"):
+            try:
+                job["bytes_written"] += (Path(folder) / name).stat().st_size
+            except OSError:
+                pass
+    return job
+
+
+def start_backup_job(project, account, mode, destination, expected_ref):
+    global BACKUP_JOB
+    if mode not in {"full", "schema", "data"}:
+        raise ValueError("Invalid backup mode.")
+    phases = ["preflight", "connection"] + (["roles", "schema", "data"] if mode == "full" else [mode]) + ["manifest", "verify"]
+    with BACKUP_JOB_LOCK:
+        if BACKUP_JOB and BACKUP_JOB["status"] in {"queued", "running"}:
+            raise ValueError("A dashboard backup is already in progress.")
+        job_id = secrets.token_hex(16)
+        BACKUP_JOB = {"id":job_id, "account":account, "project":project, "project_ref":expected_ref, "mode":mode,
+                      "status":"queued", "phase":"preflight", "phases":phases, "completed":0,
+                      "started_at":time.time(), "phase_started_at":time.time()}
+
+    def progress(phase, **details):
+        with BACKUP_JOB_LOCK:
+            job = BACKUP_JOB
+            job["status"] = "running"
+            job["phase"] = phase
+            job["phase_started_at"] = time.time()
+            if phase in phases:
+                job["completed"] = max(job["completed"], phases.index(phase))
+            elif phase == "complete":
+                job["completed"] = len(phases)
+            if "folder" in details:
+                job["_folder"] = details["folder"]
+            if "connection" in details:
+                job["connection"] = details["connection"]
+
+    def worker():
+        try:
+            current = read_registry()
+            _, p = validate_backup_selection(current, {"account":account,"project":project})
+            if p.get("project_ref") != expected_ref:
+                raise ValueError("Project reference changed before backup.")
+            result = backup_backend().backup_database(project, mode=mode, destination=destination, progress=progress)
+            with BACKUP_JOB_LOCK:
+                BACKUP_JOB.update(status="completed", finished_at=time.time(), backup_dir=result["backup_dir"])
+        except Exception as exc:
+            # Do not expose arbitrary subprocess diagnostics or credentials in job status.
+            detail = str(exc).lower()
+            reason = ("Timeout or process launch failure" if "timeout" in detail else
+                      "Missing PAT permission or access denied" if "permission" in detail or "403" in detail else
+                      "Backup failed during current phase; check configuration and CLI")
+            with BACKUP_JOB_LOCK:
+                BACKUP_JOB.update(status="failed", finished_at=time.time(), error=reason)
+
+    threading.Thread(target=worker, daemon=True, name="backup-job").start()
+    return job_id
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw): super().__init__(*a,directory=str(UI_DIR),**kw)
     def log_message(self,fmt,*args): sys.stdout.write("[ui] "+fmt%args+"\n")
@@ -1193,6 +1265,8 @@ class Handler(SimpleHTTPRequestHandler):
         l=int(self.headers.get("Content-Length","0")); raw=self.rfile.read(l); return json.loads(raw.decode()) if raw else {}
     def do_GET(self):
         p=urlparse(self.path)
+        if p.path=="/api/backup-job":
+            self.send_json({"ok":True,"job":backup_job_snapshot()});return
         if p.path=="/api/runtime":
             self.send_json({"ok":True,"runtime":runtime_payload("local-control-plane")})
             return
@@ -1216,6 +1290,9 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             body=self.read_json()
             if path=="/api/shutdown":
+                job=backup_job_snapshot()
+                if job and job["status"] in {"queued","running"}:
+                    raise ValueError("Cannot shut down while a dashboard backup is running.")
                 self.send_json({"ok":True,"message":"Supabase Multi local control plane shutting down."})
                 threading.Thread(target=self.server.shutdown,daemon=True).start()
                 return
@@ -1257,6 +1334,13 @@ class Handler(SimpleHTTPRequestHandler):
                     p.pop("backup_dir",None)
                 write_registry(reg)
                 self.send_json({"ok":True,"message":"Backup destination saved.","project":project,"backup_dir":p.get("backup_dir","")});return
+            if path=="/api/backup-start":
+                reg=read_registry()
+                project,p=validate_backup_selection(reg,body)
+                mode=(body.get("mode") or "full").strip().lower()
+                destination=(body.get("destination") or "").strip() or None
+                job_id=start_backup_job(project,body["account"].strip(),mode,destination,p.get("project_ref"))
+                self.send_json({"ok":True,"job_id":job_id},202);return
             if path=="/api/backup-create":
                 reg=read_registry()
                 project,p=validate_backup_selection(reg,body)
