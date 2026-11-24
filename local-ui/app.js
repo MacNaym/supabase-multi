@@ -182,6 +182,7 @@ function renderDashboard(data){
 }
 
 async function refresh(){try{applyLanguage();
+try { const {runtime}=await api("/api/runtime"); const version=runtime.app_version||"unknown"; $("#appVersionHeader").textContent="LOCAL CONTROL PANEL · V"+version; $("#appVersionFooter").textContent="Supabase Multi "+version+" · Backup "+(runtime.backup_module_version||"unknown")+" · "+(runtime.git_commit||"").slice(0,7); } catch(e) { $("#appVersionHeader").textContent="LOCAL CONTROL PANEL · VERSION UNKNOWN"; }
 const{data}=await api("/api/state");state=data;$("#rootPath").textContent=data.root;renderDashboard(data);renderBackupProjectSelector(data);
 ["authAccount","discoverAccount","projectAccount"].forEach(function(id){
   const el=$("#"+id);
