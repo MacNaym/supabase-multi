@@ -194,6 +194,13 @@ def test_restore(path: str, *, image: str, trusted: bool = False, approved_finge
                 missing = compare_copy_columns(required,available)
                 report["compatibility"]["missing"] = missing[:100]
                 report["compatibility"]["missing_count"] = len(missing)
+                by_schema = {}
+                for schema, table, column in missing:
+                    entry = by_schema.setdefault(schema, {"missing_columns": 0, "tables": {}})
+                    entry["missing_columns"] += 1
+                    entry["tables"][table] = entry["tables"].get(table, 0) + 1
+                report["compatibility"]["missing_by_schema"] = by_schema
+                report["compatibility"]["missing_truncated"] = len(missing) > 100
                 if missing:
                     raise RuntimeError("Destination schema does not satisfy COPY requirements.")
             emit("restore_data")
