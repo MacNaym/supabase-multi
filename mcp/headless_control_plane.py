@@ -1087,6 +1087,7 @@ def backup_database(
             "token_env": token_env,
             "supabase_cli_version": cli_version,
             "postgres_source_version": backup_postgres_version(backup_dir),
+            "managed_migrations": backup_managed_migrations(backup_dir),
             "files": files,
         }
         manifest_path = backup_dir / "manifest.json"
@@ -1265,6 +1266,68 @@ def backup_postgres_version(folder: Path) -> str | None:
     return next(iter(versions)) if len(versions) == 1 else None
 
 
+def backup_managed_migrations(backup_dir: Path) -> dict[str, Any]:
+    """Read only allowlisted migration identifiers from pg_dump COPY blocks."""
+    result = {"auth": None, "storage": None}
+    path = backup_dir / "data.sql"
+    if not path.is_file():
+        return result
+    active = None
+    columns = []
+    records = []
+    valid = True
+    in_copy = False
+    try:
+        with path.open("r", encoding="utf-8-sig") as stream:
+            for raw in stream:
+                line = raw.rstrip("\r\n")
+                if in_copy:
+                    if line == r"\.":
+                        if active and valid:
+                            result[active] = records
+                        in_copy = False
+                        active = None
+                        continue
+                    if not active or not valid:
+                        continue
+                    fields = line.split("\t")
+                    if len(fields) != len(columns) or len(records) >= 10000:
+                        valid = False
+                        continue
+                    row = dict(zip(columns, fields))
+                    if active == "auth":
+                        version = row.get("version", "")
+                        if re.fullmatch(r"[0-9]{1,20}", version):
+                            records.append(version)
+                        else:
+                            valid = False
+                    else:
+                        mid, name, digest = (row.get(k, "") for k in ("id", "name", "hash"))
+                        if re.fullmatch(r"[0-9]{1,10}", mid) and re.fullmatch(r"[A-Za-z0-9_-]{1,180}", name) and re.fullmatch(r"[a-fA-F0-9]{32,128}", digest):
+                            records.append({"id": int(mid), "name": name, "hash": digest})
+                        else:
+                            valid = False
+                    continue
+                if not line.startswith("COPY ") or not line.endswith(" FROM stdin;"):
+                    continue
+                in_copy = True
+                match = re.fullmatch(r'COPY "?((?:auth|storage))"?\."?(schema_migrations|migrations)"? \(([^)]+)\) FROM stdin;', line)
+                if not match:
+                    continue
+                schema, table, raw_columns = match.groups()
+                if (schema, table) not in {("auth", "schema_migrations"), ("storage", "migrations")}:
+                    continue
+                active = schema
+                columns = [item.strip().strip('"') for item in raw_columns.split(",")]
+                records = []
+                valid = len(columns) == len(set(columns)) and ({"version"} if active == "auth" else {"id", "name", "hash"}).issubset(columns)
+    except (OSError, UnicodeError):
+        return {"auth": None, "storage": None}
+    if in_copy and active:
+        result[active] = None
+    return result
+
+
 def validate_database_backup(path: str) -> dict[str, Any]:
     """Non-executing, streaming heuristic checks. Never return SQL contents."""
     try:
@@ -1292,6 +1355,8 @@ def validate_database_backup(path: str) -> dict[str, Any]:
     # external/untrusted input and reports must not become a secret/SQL echo.
     report["postgres_source_version"] = backup_postgres_version(Path(integrity["backup_dir"]))
     report["postgres_version_source"] = "dump-header" if report["postgres_source_version"] else "unknown"
+    migrations = backup_managed_migrations(Path(integrity["backup_dir"]))
+    report["managed_migrations"] = {key: {"available": value is not None, "count": len(value) if value is not None else 0} for key, value in migrations.items()}
     report["total_bytes"] = sum(item["bytes"] for item in integrity["files"])
     report["integrity_fingerprint"] = hashlib.sha256(
         json.dumps([(item["name"], item["sha256"]) for item in integrity["files"]], separators=(",", ":")).encode("utf-8")
