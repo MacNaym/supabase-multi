@@ -117,3 +117,5 @@ Initial public pre-release.
 - 3.10.1-dev UX follow-up: direct history-to-restore selection, Docker image tags with pinned digest, contextual help for source and image selection.
 
 - 3.10.1-dev: derive source PostgreSQL version from dump headers, record it in new manifests, automatically select a local image matching major/minor with latest available build; manual override in advanced settings. Unknown source versions and missing matching images require manual review; no automatic download or compatibility guarantee.
+
+- Restore preflight compares pg_dump COPY column requirements against the isolated database after schema restoration, reporting missing columns before loading rows. This does not reconstruct managed service migrations or validate all SQL forms.
