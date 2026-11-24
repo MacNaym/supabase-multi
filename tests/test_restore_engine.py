@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +13,7 @@ import restore_engine as engine
 REF = "abcdefghijklmnopqrst"
 SOURCE = "zyxwvutsrqponmlkjihg"
 IMAGE = "supabase/postgres@sha256:" + "a"*64
+ECR_IMAGE = "public.ecr.aws/supabase/postgres@sha256:" + "b"*64
 
 
 def registry():
@@ -77,3 +80,91 @@ def test_local_restore_cleanup_and_isolation(monkeypatch,source,failure):
 def test_local_restore_requires_trust(source):
     with pytest.raises(ValueError,match="trusted"):
         engine.test_restore(str(source),image=IMAGE)
+
+
+def test_local_restore_accepts_pinned_supabase_ecr_image(monkeypatch, source):
+    """A locally installed official Supabase ECR image must not be rejected by its digest name."""
+    monkeypatch.setattr(engine.shutil, "which", lambda _: "docker")
+    monkeypatch.setattr(
+        engine.subprocess,
+        "run",
+        lambda cmd, **kw: SimpleNamespace(returncode=0, stdout='{"public_tables":0}' if "-At" in cmd else "", stderr=""),
+    )
+
+    assert engine.test_restore(str(source), image=ECR_IMAGE, trusted=True)["ok"] is True
+
+
+def test_local_restore_reports_ordered_restore_and_complete_inventory(monkeypatch, source):
+    """Dropping a restore phase or inventory class must make this fail."""
+    monkeypatch.setattr(engine.shutil, "which", lambda _: "docker")
+    calls = []
+    inventory = {
+        "server_version": "16.1",
+        "public_tables": 2,
+        "data_rows_estimate": 3,
+        "public_functions": 1,
+        "constraints": 2,
+        "rls_tables": 1,
+        "policies": 1,
+        "extensions": 4,
+    }
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return SimpleNamespace(returncode=0, stdout=json.dumps(inventory) if "-At" in cmd else "", stderr="")
+
+    monkeypatch.setattr(engine.subprocess, "run", run)
+
+    report = engine.test_restore(str(source), image=IMAGE, trusted=True)
+
+    restore_calls = [call for call in calls if "psql" in call and "--file" in call]
+    restored_files = [call[call.index("--file") + 1] for call in restore_calls]
+    assert restored_files == ["/tmp/roles.sql", "/tmp/schema.sql", "/tmp/data.sql"]
+    assert set(inventory) <= set(report["inventory"])
+    postcheck = next(call for call in calls if "-At" in call)
+    query = postcheck[postcheck.index("-c") + 1]
+    for field in ("data_rows_estimate", "public_functions", "constraints", "rls_tables", "policies", "extensions"):
+        assert field in query
+
+
+@pytest.mark.skipif(
+    os.environ.get("SUPABASE_MULTI_RUN_DOCKER_TESTS") != "1",
+    reason="set SUPABASE_MULTI_RUN_DOCKER_TESTS=1 to run the disposable Docker restore test",
+)
+def test_disposable_restore_with_synthetic_database(tmp_path):
+    """The real isolated restore must retain synthetic schema, data and protections."""
+    image = os.environ.get(
+        "SUPABASE_MULTI_RESTORE_TEST_IMAGE",
+        "public.ecr.aws/supabase/postgres@sha256:0b64586fb84124b9070525a6528616594a1aa84a75d84cd4c3d43acc8de3ba92",
+    )
+    contents = {
+        "roles.sql": "-- Roles\n",
+        "schema.sql": """-- PostgreSQL database dump
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE TABLE public.restore_smoke (id integer PRIMARY KEY, label text NOT NULL CHECK (char_length(label) > 0));
+ALTER TABLE public.restore_smoke ENABLE ROW LEVEL SECURITY;
+CREATE POLICY restore_smoke_read ON public.restore_smoke FOR SELECT USING (true);
+CREATE FUNCTION public.restore_increment(value integer) RETURNS integer LANGUAGE sql IMMUTABLE AS $$ SELECT value + 1 $$;
+""",
+        "data.sql": "INSERT INTO public.restore_smoke (id, label) VALUES (1, 'synthetic');\n",
+    }
+    files = []
+    for name, content in contents.items():
+        path = tmp_path / name
+        path.write_text(content, encoding="utf-8")
+        files.append({"name": name, "bytes": path.stat().st_size, "sha256": engine.hashlib.sha256(path.read_bytes()).hexdigest()})
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"format": "supabase-multi-backup-v1", "mode": "full", "project": "synthetic", "project_ref": SOURCE, "files": files}),
+        encoding="utf-8",
+    )
+
+    report = engine.test_restore(str(tmp_path), image=image, trusted=True)
+
+    assert report["ok"] is True, report
+    assert report["cleanup_ok"] is True
+    assert report["inventory"]["public_tables"] >= 1
+    assert report["inventory"]["data_rows_estimate"] >= 1
+    assert report["inventory"]["public_functions"] >= 1
+    assert report["inventory"]["constraints"] >= 2
+    assert report["inventory"]["rls_tables"] >= 1
+    assert report["inventory"]["policies"] >= 1

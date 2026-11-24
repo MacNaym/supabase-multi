@@ -722,7 +722,7 @@ async function pollRestoreJob(){
     if(restoreStarting)return;
     restoreBusy=!!job&&["queued","running"].includes(job.status);
     if(job){
-      const phases=["validation","container","readiness","copy","restore","postcheck"];
+      const phases=["validation","container","readiness","copy","restore_roles","restore_schema","restore_data","postcheck"];
       $("#restoreProgress").value=job.status==="completed"?6:Math.max(0,phases.indexOf(job.phase));
       $("#restoreReport").textContent=job.status+" · "+job.phase+" · "+job.elapsed_seconds+" s"+(job.report?"\n"+JSON.stringify(job.report,null,2):job.error?"\n"+job.error:"");
     }

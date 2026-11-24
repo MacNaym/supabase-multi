@@ -15,7 +15,7 @@ from pathlib import Path
 from headless_control_plane import validate_database_backup
 
 FILES = ("roles.sql", "schema.sql", "data.sql")
-IMAGE_PATTERN = re.compile(r"(?:docker\.io/)?supabase/postgres@sha256:[a-f0-9]{64}\Z")
+IMAGE_PATTERN = re.compile(r"(?:(?:docker\.io/)?supabase|public\.ecr\.aws/supabase)/postgres@sha256:[a-f0-9]{64}\Z")
 
 
 def test_restore(path: str, *, image: str, trusted: bool = False, progress=None):
@@ -92,16 +92,29 @@ def test_restore(path: str, *, image: str, trusted: bool = False, progress=None)
             emit("copy")
             for filename in FILES:
                 run(["cp",str(stage/filename),name+":/tmp/"+filename])
-            emit("restore")
-            run(["exec","-e","PGPASSWORD="+password,name,"psql","-X","-h","127.0.0.1",
-                 "-U","postgres","-d","postgres","--single-transaction","--set","ON_ERROR_STOP=1",
-                 "--file","/tmp/roles.sql","--file","/tmp/schema.sql",
-                 "--command","SET session_replication_role = replica",
-                 "--file","/tmp/data.sql"],timeout=3600)
+            def restore_file(filename: str, *, replica_mode: bool = False) -> None:
+                command = ["exec","-e","PGPASSWORD="+password,name,"psql","-X","-h","127.0.0.1",
+                           "-U","postgres","-d","postgres","--single-transaction","--set","ON_ERROR_STOP=1"]
+                if replica_mode:
+                    command.extend(["--command","SET session_replication_role = replica"])
+                command.extend(["--file","/tmp/"+filename])
+                run(command,timeout=3600)
+
+            # Separate sessions make the dependency order explicit while each
+            # compatible dump remains atomic and stops at its first SQL error.
+            emit("restore_roles")
+            restore_file("roles.sql")
+            emit("restore_schema")
+            restore_file("schema.sql")
+            emit("restore_data")
+            restore_file("data.sql", replica_mode=True)
             emit("postcheck")
             query = """SELECT json_build_object(
             'server_version',current_setting('server_version'),
             'public_tables',(SELECT count(*) FROM pg_tables WHERE schemaname='public'),
+            'data_rows_estimate',(SELECT coalesce(sum(s.n_live_tup),0) FROM pg_stat_user_tables s WHERE s.schemaname='public'),
+            'public_functions',(SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public'),
+            'constraints',(SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='public'),
             'rls_tables',(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relrowsecurity),
             'policies',(SELECT count(*) FROM pg_policies WHERE schemaname='public'),
             'extensions',(SELECT count(*) FROM pg_extension));"""
