@@ -567,27 +567,62 @@ $("#projectForm").onsubmit=async e=>{
 
 
 let lastBackupProject="";
+let backupBusy=false;
+let backupHistoryGeneration=0;
+
+function clearBackupHistory(){
+  backupHistoryGeneration++;
+  $("#backupRootHint").textContent="—";
+  $("#backupEmpty").classList.remove("hidden");
+  $("#backupHistoryWrap").classList.add("hidden");
+  $("#backupHistoryTable").innerHTML="";
+}
+
+function backupSelection(){
+  const account=$("#backupAccount").value;
+  const project=$("#backupProject").value;
+  const p=(state.projects||[]).find(x=>x.name===project && x.account===account && x.enabled!==false);
+  return p ? {account,project,p} : null;
+}
+
+function updateBackupControls(){
+  const selected=backupSelection();
+  $("#backupProjectRef").textContent=selected ? "Ref: "+selected.p.project_ref : "—";
+  $("#backupAccount").disabled=backupBusy;
+  $("#backupProject").disabled=backupBusy||!$("#backupAccount").value;
+  ["backupCreateBtn","backupSaveDestinationBtn","backupChooseFolderBtn","backupDestination","backupMode","backupRefreshBtn"].forEach(id=>$("#"+id).disabled=backupBusy||!selected);
+}
+
+function backupOptions(el,items,placeholder,previous){
+  el.innerHTML='<option value="">'+esc(placeholder)+'</option>'+items.map(x=>'<option value="'+esc(x.name)+'">'+esc(x.label||x.name)+' ('+esc(x.name)+')</option>').join("");
+  el.value=items.some(x=>x.name===previous)?previous:"";
+}
 
 function renderBackupProjectSelector(data){
-  const el=$("#backupProject");
-  if(!el)return;
-  const projects=data.projects||[];
-  const previous=el.value||lastBackupProject;
-  opts(el,projects);
-  if(previous && projects.some(function(p){return p.name===previous;}))el.value=previous;
-  lastBackupProject=el.value||"";
-  const p=projects.find(function(x){return x.name===el.value;});
-  if(p && !($("#backupDestination").value||"").trim()){
-    $("#backupDestination").value=p.backup_dir||"";
+  const account=$("#backupAccount"), project=$("#backupProject");
+  if(!account||!project)return;
+  const previousAccount=account.value, previousProject=project.value;
+  backupOptions(account,data.accounts||[],currentLang==="it"?"Seleziona account":"Select account",previousAccount);
+  backupOptions(project,(data.projects||[]).filter(p=>account.value && p.account===account.value && p.enabled!==false),currentLang==="it"?"Seleziona progetto":"Select project",previousProject);
+  if(project.value!==lastBackupProject){
+    clearBackupHistory();
+    const selected=backupSelection();
+    $("#backupDestination").value=selected?selected.p.backup_dir||"":"";
   }
+  lastBackupProject=project.value;
+  updateBackupControls();
 }
 
 async function refreshBackupHistory(){
-  const project=$("#backupProject") ? $("#backupProject").value : "";
-  if(!project)return;
+  const selected=backupSelection();
+  clearBackupHistory();
+  if(!selected)return;
+  const generation=backupHistoryGeneration;
+  const {account,project}=selected;
   try{
     const destination=($("#backupDestination") ? $("#backupDestination").value : "").trim();
-    const r=await api("/api/backup-list",{project:project,destination:destination||null});
+    const r=await api("/api/backup-list",{account,project,destination:destination||null});
+    if(generation!==backupHistoryGeneration)return;
     const result=r.result||{};
     const backups=result.backups||[];
     $("#backupRootHint").textContent=result.root||"—";
@@ -641,25 +676,36 @@ function bindBackupHistoryButtons(){
   });
 }
 
+if($("#backupAccount"))$("#backupAccount").onchange=function(){
+  $("#backupProject").value="";
+  lastBackupProject="";
+  $("#backupDestination").value="";
+  clearBackupHistory();
+  renderBackupProjectSelector(state);
+};
 if($("#backupProject"))$("#backupProject").onchange=async function(){
   lastBackupProject=$("#backupProject").value;
-  const p=(state.projects||[]).find(function(x){return x.name===lastBackupProject;});
-  $("#backupDestination").value=(p&&p.backup_dir)||"";
+  const selected=backupSelection();
+  $("#backupDestination").value=selected?selected.p.backup_dir||"":"";
+  updateBackupControls();
   await refreshBackupHistory();
 };
 
 if($("#backupChooseFolderBtn"))$("#backupChooseFolderBtn").onclick=async function(){
   try{
+    const selected=backupSelection(); if(!selected)return;
     const r=await api("/api/backup-pick-folder",{initial_dir:($("#backupDestination").value||"").trim()});
-    if(r.selected)$("#backupDestination").value=r.selected;
+    const current=backupSelection();
+    if(r.selected&&current&&current.account===selected.account&&current.project===selected.project)$("#backupDestination").value=r.selected;
   }catch(e){show(e.message,true)}
 };
 
 if($("#backupSaveDestinationBtn"))$("#backupSaveDestinationBtn").onclick=async function(){
-  const project=$("#backupProject").value;
-  if(!project){show(t("project_not_found"),true);return}
+  const selected=backupSelection();
+  if(!selected){show(t("project_not_found"),true);return}
+  const {account,project}=selected;
   try{
-    const r=await api("/api/backup-settings",{project:project,backup_dir:($("#backupDestination").value||"").trim()});
+    const r=await api("/api/backup-settings",{account,project,backup_dir:($("#backupDestination").value||"").trim()});
     show(r.message);
     await refresh();
     await refreshBackupHistory();
@@ -667,17 +713,20 @@ if($("#backupSaveDestinationBtn"))$("#backupSaveDestinationBtn").onclick=async f
 };
 
 if($("#backupCreateBtn"))$("#backupCreateBtn").onclick=async function(){
-  const project=$("#backupProject").value;
+  const selected=backupSelection();
+  if(!selected||backupBusy)return;
+  const {account,project}=selected;
   const mode=$("#backupMode").value;
   const destination=($("#backupDestination").value||"").trim();
   if(!project){show(t("project_not_found"),true);return}
   const button=$("#backupCreateBtn");
-  button.disabled=true;
+  backupBusy=true;
+  updateBackupControls();
   const oldText=button.textContent;
   button.textContent=currentLang==="it"?"Backup in corso…":"Backing up…";
   log("Backup "+mode+" in corso per "+project+"…");
   try{
-    const r=await api("/api/backup-create",{project:project,mode:mode,destination:destination||null,save_default:false});
+    const r=await api("/api/backup-create",{account,project,mode:mode,destination:destination||null,save_default:false});
     show(r.message+"\n"+r.result.backup_dir);
     log(JSON.stringify(r.result,null,2));
     await refreshBackupHistory();
@@ -685,7 +734,8 @@ if($("#backupCreateBtn"))$("#backupCreateBtn").onclick=async function(){
     show(e.message,true);
     log(e.message);
   }finally{
-    button.disabled=false;
+    backupBusy=false;
+    updateBackupControls();
     button.textContent=oldText;
   }
 };
