@@ -1,5 +1,7 @@
 ## Backup V1.2
 
+- Automatic IPv4 session pooler fallback with project-scoped API lookup and temporary CLI login; regression coverage for routing and error redaction.
+
 - Separate account and project selection, explicit project ref, backend ownership validation and project-specific history.
 - Explicit CLI profile for backup subprocesses; no password fallback for unrelated errors.
 
