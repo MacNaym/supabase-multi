@@ -564,6 +564,133 @@ $("#projectForm").onsubmit=async e=>{
   }
 };
 
+
+let lastBackupProject="";
+
+function renderBackupProjectSelector(data){
+  const el=$("#backupProject");
+  if(!el)return;
+  const projects=data.projects||[];
+  const previous=el.value||lastBackupProject;
+  opts(el,projects);
+  if(previous && projects.some(function(p){return p.name===previous;}))el.value=previous;
+  lastBackupProject=el.value||"";
+  const p=projects.find(function(x){return x.name===el.value;});
+  if(p && !($("#backupDestination").value||"").trim()){
+    $("#backupDestination").value=p.backup_dir||"";
+  }
+}
+
+async function refreshBackupHistory(){
+  const project=$("#backupProject") ? $("#backupProject").value : "";
+  if(!project)return;
+  try{
+    const destination=($("#backupDestination") ? $("#backupDestination").value : "").trim();
+    const r=await api("/api/backup-list",{project:project,destination:destination||null});
+    const result=r.result||{};
+    const backups=result.backups||[];
+    $("#backupRootHint").textContent=result.root||"—";
+    if(!backups.length){
+      $("#backupEmpty").classList.remove("hidden");
+      $("#backupHistoryWrap").classList.add("hidden");
+      $("#backupHistoryTable").innerHTML="";
+      return;
+    }
+    $("#backupEmpty").classList.add("hidden");
+    $("#backupHistoryWrap").classList.remove("hidden");
+    let rows="";
+    backups.forEach(function(b){
+      rows += "<tr>"+
+        "<td>"+esc(b.created_at||"—")+"</td>"+
+        "<td>"+esc(b.mode||"—")+"</td>"+
+        "<td>"+esc(b.files||0)+"</td>"+
+        "<td><code>"+esc(b.backup_dir||"")+"</code></td>"+
+        "<td class=\"actions\">"+
+          "<button class=\"secondary backup-verify-btn\" data-path=\""+esc(b.backup_dir||"")+"\">"+t("verify_backup")+"</button>"+
+          "<button class=\"secondary backup-open-btn\" data-path=\""+esc(b.backup_dir||"")+"\">"+t("open_folder")+"</button>"+
+        "</td>"+
+      "</tr>";
+    });
+    $("#backupHistoryTable").innerHTML=
+      "<thead><tr><th>Date</th><th>"+t("backup_mode")+"</th><th>Files</th><th>Path</th><th></th></tr></thead><tbody>"+
+      rows+
+      "</tbody>";
+    bindBackupHistoryButtons();
+  }catch(e){
+    show(e.message,true);
+  }
+}
+
+function bindBackupHistoryButtons(){
+  document.querySelectorAll(".backup-verify-btn").forEach(function(btn){
+    btn.onclick=async function(){
+      try{
+        const r=await api("/api/backup-verify",{path:btn.dataset.path});
+        const ok=!!(r.result&&r.result.ok);
+        show(ok?"Backup verificato: hash e dimensioni corretti.":"Backup NON valido: almeno un file manca o è stato modificato.",!ok);
+        log(JSON.stringify(r.result,null,2));
+      }catch(e){show(e.message,true)}
+    };
+  });
+  document.querySelectorAll(".backup-open-btn").forEach(function(btn){
+    btn.onclick=async function(){
+      try{await api("/api/backup-open",{path:btn.dataset.path})}
+      catch(e){show(e.message,true)}
+    };
+  });
+}
+
+if($("#backupProject"))$("#backupProject").onchange=async function(){
+  lastBackupProject=$("#backupProject").value;
+  const p=(state.projects||[]).find(function(x){return x.name===lastBackupProject;});
+  $("#backupDestination").value=(p&&p.backup_dir)||"";
+  await refreshBackupHistory();
+};
+
+if($("#backupChooseFolderBtn"))$("#backupChooseFolderBtn").onclick=async function(){
+  try{
+    const r=await api("/api/backup-pick-folder",{initial_dir:($("#backupDestination").value||"").trim()});
+    if(r.selected)$("#backupDestination").value=r.selected;
+  }catch(e){show(e.message,true)}
+};
+
+if($("#backupSaveDestinationBtn"))$("#backupSaveDestinationBtn").onclick=async function(){
+  const project=$("#backupProject").value;
+  if(!project){show(t("project_not_found"),true);return}
+  try{
+    const r=await api("/api/backup-settings",{project:project,backup_dir:($("#backupDestination").value||"").trim()});
+    show(r.message);
+    await refresh();
+    await refreshBackupHistory();
+  }catch(e){show(e.message,true)}
+};
+
+if($("#backupCreateBtn"))$("#backupCreateBtn").onclick=async function(){
+  const project=$("#backupProject").value;
+  const mode=$("#backupMode").value;
+  const destination=($("#backupDestination").value||"").trim();
+  if(!project){show(t("project_not_found"),true);return}
+  const button=$("#backupCreateBtn");
+  button.disabled=true;
+  const oldText=button.textContent;
+  button.textContent=currentLang==="it"?"Backup in corso…":"Backing up…";
+  log("Backup "+mode+" in corso per "+project+"…");
+  try{
+    const r=await api("/api/backup-create",{project:project,mode:mode,destination:destination||null,save_default:false});
+    show(r.message+"\n"+r.result.backup_dir);
+    log(JSON.stringify(r.result,null,2));
+    await refreshBackupHistory();
+  }catch(e){
+    show(e.message,true);
+    log(e.message);
+  }finally{
+    button.disabled=false;
+    button.textContent=oldText;
+  }
+};
+
+if($("#backupRefreshBtn"))$("#backupRefreshBtn").onclick=refreshBackupHistory;
+
 async function action(path){log("Esecuzione...");try{const r=await api(path,{});let t=r.message+"\n\n";if(r.result)t+=(r.result.stdout||"")+(r.result.stderr||"");if(r.sync)t+="--- SYNC ---\n"+(r.sync.stdout||"")+(r.sync.stderr||"")+"\n--- DOCTOR ---\n"+(r.doctor.stdout||"")+(r.doctor.stderr||"");log(t);show(r.message);await refresh()}catch(e){log(e.message);show(e.message,true)}}
 if($("#dashboardRefreshBtn"))$("#dashboardRefreshBtn").onclick=refresh;$("#syncBtn").onclick=()=>action("/api/sync");$("#doctorBtn").onclick=()=>action("/api/doctor");$("#allBtn").onclick=()=>action("/api/sync-doctor");$("#refreshBtn").onclick=refresh;$("#clearOutputBtn").onclick=()=>log(t("ready_log"));bindNavigation();refresh();
 
