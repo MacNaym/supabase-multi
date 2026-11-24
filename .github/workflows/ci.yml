@@ -39,6 +39,10 @@ jobs:
           python -c "import server; print('SUPABASE MULTI MCP IMPORT OK')"
           Pop-Location
 
+      - name: Check dashboard JavaScript syntax
+        shell: pwsh
+        run: node --check local-ui/app.js
+
       - name: Run tests
         shell: pwsh
         run: python -m pytest -q
