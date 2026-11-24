@@ -659,11 +659,16 @@ async function refreshBackupHistory(){
 }
 
 let validatedBackupPath="";
+let validatedFullBackup=false;
+let restoreBusy=false;
+let restoreStarting=false;
 let validationBusy=false;
 async function validateBackupPath(path){
   if(validationBusy)return;
   validationBusy=true;
   validatedBackupPath="";
+  validatedFullBackup=false;
+  updateRestoreControls();
   const panel=$("#backupValidationReport");
   panel.classList.remove("hidden");
   $("#backupValidationStatus").textContent=currentLang==="it"?"Verifica in corso…":"Validating…";
@@ -684,7 +689,8 @@ async function validateBackupPath(path){
       ...(r.error?[r.error]:[]), ...(r.limitations||[])
     ];
     $("#backupValidationDetails").textContent=lines.join("\n");
-    if(r.ok)validatedBackupPath=r.backup_dir;
+    if(r.ok){validatedBackupPath=r.backup_dir;validatedFullBackup=r.full_backup===true;}
+    updateRestoreControls();
     show(r.ok?(it?"Backup verificato; ripristino da collaudare.":"Backup verified; restore not tested."):(it?"Backup non valido.":"Backup validation failed."),!r.ok);
   }catch(e){
     $("#backupValidationStatus").textContent="Validation failed";
@@ -701,6 +707,39 @@ $("#backupImportBtn").onclick=async function(){
   }catch(e){show(e.message,true)}
   finally{this.disabled=false;}
 };
+
+function updateRestoreControls(){
+  $("#restoreTestBtn").disabled=restoreBusy||restoreStarting||backupBusy||!validatedFullBackup||!$("#restoreTrusted").checked||!$("#restoreImage").value.trim();
+}
+$("#restoreTrusted").onchange=updateRestoreControls;
+$("#restoreImage").oninput=updateRestoreControls;
+let restorePolling=false;
+async function pollRestoreJob(){
+  if(restorePolling)return;
+  restorePolling=true;
+  try{
+    const {job}=await api("/api/restore-job");
+    if(restoreStarting)return;
+    restoreBusy=!!job&&["queued","running"].includes(job.status);
+    if(job){
+      const phases=["validation","container","readiness","copy","restore","postcheck"];
+      $("#restoreProgress").value=job.status==="completed"?6:Math.max(0,phases.indexOf(job.phase));
+      $("#restoreReport").textContent=job.status+" · "+job.phase+" · "+job.elapsed_seconds+" s"+(job.report?"\n"+JSON.stringify(job.report,null,2):job.error?"\n"+job.error:"");
+    }
+  }catch(e){if(restoreBusy)$("#restoreReport").textContent="Connection lost; restore status unknown.";}
+  finally{restorePolling=false;updateRestoreControls();}
+}
+$("#restoreTestBtn").onclick=async function(){
+  if(this.disabled)return;
+  restoreStarting=true;
+  updateRestoreControls();
+  try{
+    await api("/api/restore-test-start",{path:validatedBackupPath,image:$("#restoreImage").value.trim(),trusted:$("#restoreTrusted").checked});
+    restoreBusy=true;
+  }catch(e){show(e.message,true);}
+  finally{restoreStarting=false;updateRestoreControls();await pollRestoreJob();}
+};
+setInterval(pollRestoreJob,1500);
 
 function bindBackupHistoryButtons(){
   document.querySelectorAll(".backup-verify-btn").forEach(function(btn){
