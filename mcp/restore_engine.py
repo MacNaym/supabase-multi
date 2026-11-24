@@ -18,6 +18,34 @@ FILES = ("roles.sql", "schema.sql", "data.sql")
 IMAGE_PATTERN = re.compile(r"(?:(?:docker\.io/)?supabase|public\.ecr\.aws/supabase)/postgres@sha256:[a-f0-9]{64}\Z")
 
 
+# Only expose fixed-format diagnostics, never SQL text, row data or identifiers.
+def safe_restore_diagnostic(stderr: str) -> dict:
+    result = {}
+    for line in (stderr or "").splitlines():
+        match = re.match(r"^psql:/tmp/(roles|schema|data)\.sql:(\d{1,10}):\s*(?:ERROR|FATAL):", line)
+        if match:
+            result["file"] = match.group(1) + ".sql"
+            result["line"] = int(match.group(2))
+            break
+    code = re.search(r"(?m)^(?:psql:/tmp/(?:roles|schema|data)\.sql:\d+:\s*)?(?:ERROR|FATAL):\s+([0-9A-Z]{5}):", stderr or "")
+    if code:
+        result["sqlstate"] = code.group(1)
+    categories = {
+        "23505":"duplicate_key", "23503":"foreign_key_violation",
+        "23502":"not_null_violation", "23514":"check_violation",
+        "42P01":"missing_relation", "42703":"missing_column",
+        "42501":"insufficient_privilege", "22P02":"invalid_input",
+        "42804":"datatype_mismatch", "42704":"undefined_object",
+        "0A000":"unsupported_feature", "42601":"syntax_error",
+        "57014":"query_cancelled", "55P03":"lock_unavailable",
+        "25P02":"transaction_aborted", "22001":"value_too_long",
+        "42710":"duplicate_object", "42P07":"duplicate_relation",
+        "22003":"numeric_out_of_range", "08006":"connection_failure",
+    }
+    result["category"] = categories.get(result.get("sqlstate"),"unclassified")
+    return result
+
+
 def test_restore(path: str, *, image: str, trusted: bool = False, approved_fingerprint: str | None = None, progress=None):
     """Restore into a new network-disabled container; discard it afterwards.
 
@@ -60,6 +88,9 @@ def test_restore(path: str, *, image: str, trusted: bool = False, approved_finge
         except (OSError,subprocess.TimeoutExpired):
             raise RuntimeError("Docker command failed to launch or timed out.") from None
         if check and proc.returncode:
+            if report["phase"] in {"restore_roles","restore_schema","restore_data","postcheck"}:
+                report["diagnostic"] = safe_restore_diagnostic(proc.stderr)
+                report["diagnostic"]["exit_code"] = proc.returncode
             # SQL error output can contain actual data and secrets.
             raise RuntimeError("Docker or SQL command failed during "+report["phase"]+".")
         return proc
@@ -106,7 +137,7 @@ def test_restore(path: str, *, image: str, trusted: bool = False, approved_finge
                 run(["cp",str(stage/filename),name+":/tmp/"+filename])
             def restore_file(filename: str, *, replica_mode: bool = False) -> None:
                 command = ["exec","-e","PGPASSWORD="+password,name,"psql","-X","-h","127.0.0.1",
-                           "-U","postgres","-d","postgres","--single-transaction","--set","ON_ERROR_STOP=1"]
+                           "-U","postgres","-d","postgres","--single-transaction","--set","ON_ERROR_STOP=1","--set","VERBOSITY=verbose"]
                 if replica_mode:
                     command.extend(["--command","SET session_replication_role = replica"])
                 command.extend(["--file","/tmp/"+filename])
