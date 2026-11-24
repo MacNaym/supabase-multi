@@ -18,7 +18,7 @@ RUNTIME_FILES = (
     ROOT / "mcp" / "headless_control_plane.py",
     ROOT / "mcp" / "restore_engine.py",
 )
-APP_VERSION = "3.10.0"
+APP_VERSION = "3.10.1-dev"
 BACKUP_MODULE_VERSION = "1.5.0"
 STARTED_AT = time.time()
 
