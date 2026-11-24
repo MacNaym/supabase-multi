@@ -187,3 +187,16 @@ def test_backup_database_requires_connection_env(monkeypatch, tmp_path):
             mode="full",
             destination=str(tmp_path),
         )
+
+
+def test_backup_database_rejects_invalid_env_name(monkeypatch, tmp_path):
+    module = load_module()
+    install_project(monkeypatch, module)
+
+    with pytest.raises(ValueError, match="valid environment-variable name"):
+        module.backup_database(
+            "example-prod",
+            mode="schema",
+            destination=str(tmp_path),
+            db_url_env="BAD'); Write-Output hacked; ('",
+        )
