@@ -194,6 +194,16 @@
           </section>
         </section>
         <section class="dashboard-section">
+          <h3>Restore test / Ripristino di prova</h3>
+          <p class="muted">Disposable local Docker database; no remote writes. Validate a trusted full backup first.</p>
+          <label>Supabase PostgreSQL image (local digest)<input id="restoreImage" placeholder="supabase/postgres@sha256:..."></label>
+          <label><input type="checkbox" id="restoreTrusted"> I trust this backup and authorize local SQL execution.</label>
+          <button id="restoreTestBtn" class="secondary" disabled>Test restore</button>
+          <progress id="restoreProgress" max="6" value="0" style="width:100%"></progress>
+          <pre id="restoreReport" style="white-space:pre-wrap;overflow-wrap:anywhere" aria-live="polite"></pre>
+          <p class="muted">Remote restore execution is disabled pending end-to-end verification.</p>
+        </section>
+        <section class="dashboard-section">
           <div class="section-head">
             <div><h3 data-i18n="backup_history">Backup history</h3><p id="backupRootHint" class="muted">—</p></div>
           </div>
