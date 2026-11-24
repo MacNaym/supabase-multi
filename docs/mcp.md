@@ -123,3 +123,7 @@ The server also contains a portable headless backend and optional Streamable HTT
 ### IPv4 session pooler fallback (Backup V1.2)
 
 Backups default to `auto`: try the exact project ref first, then resolve its primary shared session pooler through the Management API if the CLI reports IPv6 is unavailable. Optional per-project registry field `backup_connection_mode` accepts `auto`, `direct`, or `session-pooler`. The fallback requires `database_pooling_config_read` and, unless a project database password is already configured, `database_write` to mint a temporary CLI login. Temporary credentials are not written to the registry or manifest; the connection URL is passed to the local CLI process and is never returned in the API response. Local processes with sufficient privileges may inspect command-line arguments. A live backup and restore test is required to establish compatibility.
+
+## Dashboard backup jobs (V1.3)
+
+The dashboard uses `POST /api/backup-start` and polls `GET /api/backup-job`. The server retains the latest job in memory, so browser refresh does not lose its status while the server remains running. Progress counts completed phases, not percentage of database bytes. File sizes may remain unchanged while the CLI works. Server reachability is not proof of dump activity. One dashboard job at a time; MCP backup calls retain their synchronous behavior and are not tracked by this dashboard job manager. Do not restart the server during a backup. Job status is not durable across process restarts. Each CLI dump has a one-hour timeout.
