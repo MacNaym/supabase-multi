@@ -660,6 +660,7 @@ async function refreshBackupHistory(){
 
 let validatedBackupPath="";
 let validatedFullBackup=false;
+let validatedBackupFingerprint="";
 let restoreBusy=false;
 let restoreStarting=false;
 let validationBusy=false;
@@ -668,6 +669,8 @@ async function validateBackupPath(path){
   validationBusy=true;
   validatedBackupPath="";
   validatedFullBackup=false;
+  validatedBackupFingerprint="";
+  $("#restoreTrusted").checked=false;
   updateRestoreControls();
   const panel=$("#backupValidationReport");
   panel.classList.remove("hidden");
@@ -689,7 +692,7 @@ async function validateBackupPath(path){
       ...(r.error?[r.error]:[]), ...(r.limitations||[])
     ];
     $("#backupValidationDetails").textContent=lines.join("\n");
-    if(r.ok){validatedBackupPath=r.backup_dir;validatedFullBackup=r.full_backup===true;}
+    if(r.ok){validatedBackupPath=r.backup_dir;validatedFullBackup=r.full_backup===true;validatedBackupFingerprint=r.integrity_fingerprint||"";}
     updateRestoreControls();
     show(r.ok?(it?"Backup verificato; ripristino da collaudare.":"Backup verified; restore not tested."):(it?"Backup non valido.":"Backup validation failed."),!r.ok);
   }catch(e){
@@ -735,12 +738,21 @@ $("#restoreTestBtn").onclick=async function(){
   restoreStarting=true;
   updateRestoreControls();
   try{
-    await api("/api/restore-test-start",{path:validatedBackupPath,image:$("#restoreImage").value.trim(),trusted:$("#restoreTrusted").checked});
+    await api("/api/restore-test-start",{path:validatedBackupPath,image:$("#restoreImage").value.trim(),trusted:$("#restoreTrusted").checked,approved_fingerprint:validatedBackupFingerprint});
     restoreBusy=true;
   }catch(e){show(e.message,true);}
   finally{restoreStarting=false;updateRestoreControls();await pollRestoreJob();}
 };
 setInterval(pollRestoreJob,1500);
+
+async function recoverImportedBackupState(){
+  try{
+    const {result}=await api("/api/backup-imports");
+    const latest=(result.backups||[]).find(item=>item.ok&&item.full_backup);
+    if(latest)await validateBackupPath(latest.backup_dir);
+  }catch(e){/* Imported folders may be unavailable after a restart. */}
+}
+recoverImportedBackupState();
 
 function bindBackupHistoryButtons(){
   document.querySelectorAll(".backup-verify-btn").forEach(function(btn){

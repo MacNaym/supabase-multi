@@ -1,6 +1,6 @@
 ﻿
 from __future__ import annotations
-import base64, ctypes, ctypes.wintypes, hashlib, importlib, json, os, secrets, shutil, subprocess, sys, threading, time
+import base64, ctypes, ctypes.wintypes, hashlib, importlib, json, os, re, secrets, shutil, subprocess, sys, threading, time
 import urllib.parse, urllib.request, urllib.error, webbrowser
 from datetime import datetime
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
@@ -1281,10 +1281,12 @@ def restore_job_snapshot():
     return job
 
 
-def start_restore_test(path, image, trusted):
+def start_restore_test(path, image, trusted, approved_fingerprint):
     global RESTORE_JOB
     if trusted is not True:
         raise ValueError("Confirm that the backup is trusted.")
+    if not isinstance(approved_fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", approved_fingerprint):
+        raise ValueError("Validate the exact backup immediately before starting a restore test.")
     with BACKUP_JOB_LOCK, RESTORE_JOB_LOCK:
         if BACKUP_JOB and BACKUP_JOB["status"] in {"queued","running"}:
             raise ValueError("Wait for the dashboard backup to finish.")
@@ -1298,7 +1300,7 @@ def start_restore_test(path, image, trusted):
     def worker():
         try:
             from restore_engine import test_restore
-            report = test_restore(path,image=image,trusted=trusted,progress=progress)
+            report = test_restore(path,image=image,trusted=trusted,approved_fingerprint=approved_fingerprint,progress=progress)
             with RESTORE_JOB_LOCK:
                 RESTORE_JOB.update(status="completed" if report["ok"] else "failed",report=report,finished_at=time.time())
         except Exception:
@@ -1317,12 +1319,21 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control","no-store"); self.end_headers(); self.wfile.write(b)
     def read_json(self):
         l=int(self.headers.get("Content-Length","0")); raw=self.rfile.read(l); return json.loads(raw.decode()) if raw else {}
+    def require_same_origin_json(self):
+        content_type=self.headers.get("Content-Type", "").split(";",1)[0].strip().lower()
+        origin=self.headers.get("Origin", "")
+        if content_type != "application/json":
+            raise ValueError("Restore requests must use application/json.")
+        if origin and origin != f"http://{HOST}:{PORT}":
+            raise ValueError("Restore requests must originate from the local dashboard.")
     def do_GET(self):
         p=urlparse(self.path)
         if p.path=="/api/restore-job":
             self.send_json({"ok":True,"job":restore_job_snapshot()});return
         if p.path=="/api/backup-job":
             self.send_json({"ok":True,"job":backup_job_snapshot()});return
+        if p.path=="/api/backup-imports":
+            self.send_json({"ok":True,"result":backup_backend().list_imported_database_backups()});return
         if p.path=="/api/runtime":
             self.send_json({"ok":True,"runtime":runtime_payload("local-control-plane")})
             return
@@ -1344,6 +1355,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         path=urlparse(self.path).path
         try:
+            if path=="/api/restore-test-start": self.require_same_origin_json()
             body=self.read_json()
             if path=="/api/shutdown":
                 restore=restore_job_snapshot()
@@ -1394,7 +1406,7 @@ class Handler(SimpleHTTPRequestHandler):
                 write_registry(reg)
                 self.send_json({"ok":True,"message":"Backup destination saved.","project":project,"backup_dir":p.get("backup_dir","")});return
             if path=="/api/restore-test-start":
-                job_id=start_restore_test(str(body.get("path") or ""),str(body.get("image") or ""),body.get("trusted"))
+                job_id=start_restore_test(str(body.get("path") or ""),str(body.get("image") or ""),body.get("trusted"),body.get("approved_fingerprint"))
                 self.send_json({"ok":True,"job_id":job_id},202);return
             if path=="/api/restore-plan":
                 from restore_engine import plan_remote_restore

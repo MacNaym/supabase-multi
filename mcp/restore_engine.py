@@ -18,7 +18,7 @@ FILES = ("roles.sql", "schema.sql", "data.sql")
 IMAGE_PATTERN = re.compile(r"(?:(?:docker\.io/)?supabase|public\.ecr\.aws/supabase)/postgres@sha256:[a-f0-9]{64}\Z")
 
 
-def test_restore(path: str, *, image: str, trusted: bool = False, progress=None):
+def test_restore(path: str, *, image: str, trusted: bool = False, approved_fingerprint: str | None = None, progress=None):
     """Restore into a new network-disabled container; discard it afterwards.
 
     Caller must explicitly trust the source. This is not a sandbox for hostile SQL.
@@ -31,6 +31,13 @@ def test_restore(path: str, *, image: str, trusted: bool = False, progress=None)
     docker = shutil.which("docker")
     if not docker:
         raise RuntimeError("Docker is required for isolated restore.")
+    try:
+        context_result = subprocess.run([docker, "context", "show"], capture_output=True, text=True, timeout=10)
+        docker_context = (context_result.stdout or "").strip() or "default"
+    except (OSError, subprocess.TimeoutExpired):
+        raise RuntimeError("Docker local context could not be determined.") from None
+    if docker_context not in {"default", "desktop-linux"}:
+        raise RuntimeError("Local restore requires Docker's built-in local context.")
     name = "supabase-multi-restore-" + secrets.token_hex(12)
     password = secrets.token_hex(24)
     report = {"ok":False,"restore_tested":False,"destination":"disposable-local",
@@ -44,11 +51,11 @@ def test_restore(path: str, *, image: str, trusted: bool = False, progress=None)
             progress(phase)
 
     # Do not forward host PATs or database passwords into the container.
-    env = {k:v for k,v in os.environ.items() if not k.upper().startswith(("SUPABASE_", "PG"))}
+    env = {k:v for k,v in os.environ.items() if not k.upper().startswith(("SUPABASE_", "PG", "DOCKER_"))}
 
     def run(args, *, timeout=120, check=True):
         try:
-            proc = subprocess.run([docker,*args],capture_output=True,text=True,
+            proc = subprocess.run([docker,"--context",docker_context,*args],capture_output=True,text=True,
                                   timeout=timeout,env=env)
         except (OSError,subprocess.TimeoutExpired):
             raise RuntimeError("Docker command failed to launch or timed out.") from None
@@ -62,6 +69,8 @@ def test_restore(path: str, *, image: str, trusted: bool = False, progress=None)
         source = validate_database_backup(path)
         if not source.get("ok") or not source.get("full_backup"):
             raise ValueError("A full validated backup is required.")
+        if approved_fingerprint is not None and source.get("integrity_fingerprint") != approved_fingerprint:
+            raise ValueError("Backup changed since the explicit trust confirmation.")
         with tempfile.TemporaryDirectory(prefix="supabase-multi-restore-") as tmp:
             stage = Path(tmp)
             # Stage exact bytes, then validate again before executing any SQL.
@@ -83,7 +92,10 @@ def test_restore(path: str, *, image: str, trusted: bool = False, progress=None)
             emit("readiness")
             deadline = time.monotonic()+180
             while True:
-                ready = run(["exec",name,"pg_isready","-U","postgres","-d","postgres"],timeout=10,check=False)
+                # A socket listener is not sufficient: wait until authenticated
+                # SQL is usable before sending a role/schema dump.
+                ready = run(["exec","-e","PGPASSWORD="+password,name,"psql","-X","-h","127.0.0.1",
+                             "-U","postgres","-d","postgres","-At","-c","SELECT 1"],timeout=10,check=False)
                 if ready.returncode == 0:
                     break
                 if time.monotonic() >= deadline:
@@ -198,12 +210,17 @@ def remote_restore_preflight(path: str, *, account: str, project: str, expected_
     No restore is authorized by this result. A baseline inventory must be reviewed.
     """
     import urllib.parse
-    from headless_control_plane import _backup_source, _backup_pooler_url, read_token_env_value
+    from headless_control_plane import _backup_source, _backup_pooler_url, read_registry, read_token_env_value
     plan = plan_remote_restore(path, account=account, project=project,
                                expected_ref=expected_ref, trusted=trusted)
     ref, _, token, password_env, target = _backup_source(project)
     if ref != expected_ref or target.get("account") != account:
         raise ValueError("Destination changed.")
+    # Re-run the full fail-closed policy after resolving credentials and before
+    # the first network operation; registry changes cannot weaken preflight.
+    plan = plan_remote_restore(path, account=account, project=project,
+                               expected_ref=expected_ref, trusted=trusted,
+                               registry=read_registry())
     password = read_token_env_value(password_env)
     if not password:
         raise ValueError("Configure the destination database password locally.")

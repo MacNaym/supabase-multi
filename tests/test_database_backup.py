@@ -432,7 +432,7 @@ def test_restore_job_rejects_duplicate_and_keeps_snapshot(monkeypatch):
     entered = threading.Event()
     finished = threading.Event()
 
-    def restore(path, *, image, trusted, progress):
+    def restore(path, *, image, trusted, approved_fingerprint, progress):
         progress("container")
         entered.set()
         assert release.wait(5)
@@ -451,12 +451,12 @@ def test_restore_job_rejects_duplicate_and_keeps_snapshot(monkeypatch):
 
     monkeypatch.setattr(ui.threading, "Thread", thread_factory)
     try:
-        job_id = ui.start_restore_test("C:/synthetic", "supabase/postgres@sha256:" + "a" * 64, True)
+        job_id = ui.start_restore_test("C:/synthetic", "supabase/postgres@sha256:" + "a" * 64, True, "a" * 64)
         assert entered.wait(5)
         snapshot = ui.restore_job_snapshot()
         assert snapshot["id"] == job_id and snapshot["status"] == "running" and snapshot["phase"] == "container"
         with pytest.raises(ValueError, match="already running"):
-            ui.start_restore_test("C:/synthetic", "supabase/postgres@sha256:" + "a" * 64, True)
+            ui.start_restore_test("C:/synthetic", "supabase/postgres@sha256:" + "a" * 64, True, "a" * 64)
     finally:
         release.set()
     assert finished.wait(5)
@@ -545,6 +545,37 @@ def test_import_external_backup_rejects_invalid_manifest(tmp_path):
 
     assert report["ok"] is False
     assert report["imported"] is False
+
+
+def test_validation_rejects_symlinked_backup_directory(tmp_path):
+    """A linked directory cannot become trusted just because resolve() erased it."""
+    module = load_module()
+    real = tmp_path / "real-backup"
+    real.mkdir()
+    make_validation_fixture(module, real)
+    linked = tmp_path / "linked-backup"
+    try:
+        linked.symlink_to(real, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation unavailable on this Windows host")
+    assert module.validate_database_backup(str(linked))["ok"] is False
+
+
+def test_import_catalog_survives_control_plane_reload(monkeypatch, tmp_path):
+    """Losing an external import on refresh must break the control-plane contract."""
+    module = load_module()
+    source = tmp_path / "external"
+    source.mkdir()
+    make_validation_fixture(module, source)
+    catalog_root = tmp_path / "catalog"
+    monkeypatch.setattr(module, "DEFAULT_BACKUP_ROOT", catalog_root)
+    assert module.import_database_backup(str(source))["ok"]
+    refreshed = load_module()
+    monkeypatch.setattr(refreshed, "DEFAULT_BACKUP_ROOT", catalog_root)
+    records = refreshed.list_imported_database_backups()
+    assert records["count"] == 1
+    assert records["backups"][0]["backup_dir"] == str(source.resolve())
+    assert records["backups"][0]["ok"] is True
 
 
 def test_runtime_bridge_advertises_and_dispatches_safe_backup_inspection(monkeypatch):

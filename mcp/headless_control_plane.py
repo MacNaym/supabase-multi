@@ -24,6 +24,38 @@ MCP_USER_AGENT = "Supabase-Multi/0.2"
 DEFAULT_BACKUP_ROOT = Path(os.environ.get("SUPABASE_MULTI_BACKUP_DIR", Path.home() / "SupabaseMultiBackups"))
 
 
+def _has_link_component(path: Path) -> bool:
+    """Reject links/junctions in every path component before resolving it."""
+    candidate = path.expanduser().absolute()
+    current = Path(candidate.anchor)
+    for part in candidate.parts[len(current.parts):]:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _import_catalog_path() -> Path:
+    return DEFAULT_BACKUP_ROOT / ".supabase-multi-imports.json"
+
+
+def _read_import_catalog() -> list[str]:
+    try:
+        raw = json.loads(_import_catalog_path().read_text(encoding="utf-8"))
+        paths = raw.get("paths", []) if isinstance(raw, dict) else []
+        return [item for item in paths if isinstance(item, str) and item]
+    except (OSError, ValueError, TypeError):
+        return []
+
+
+def _write_import_catalog(paths: list[str]) -> None:
+    target = _import_catalog_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text(json.dumps({"version": 1, "paths": paths}, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(target)
+
+
 def read_registry() -> dict[str, Any]:
     if not REGISTRY.exists():
         return {
@@ -1151,8 +1183,10 @@ def verify_database_backup(path: str) -> dict[str, Any]:
     if not raw_path:
         raise ValueError("Backup path is required.")
 
-    candidate = Path(raw_path).expanduser()
+    candidate = Path(raw_path).expanduser().absolute()
     manifest_path = candidate if candidate.name.lower() == "manifest.json" else candidate / "manifest.json"
+    if _has_link_component(manifest_path):
+        raise ValueError("Symbolic links and junctions are not supported in backup paths.")
     if not manifest_path.is_file():
         raise ValueError("manifest.json was not found in the backup path.")
 
@@ -1200,8 +1234,10 @@ def verify_database_backup(path: str) -> dict[str, Any]:
     return {
         "ok": all_ok,
         "format": manifest.get("format"),
-        "project": manifest.get("project"),
-        "project_ref": manifest.get("project_ref"),
+        # Manifest metadata is untrusted input. Only a syntactically valid
+        # ref is useful to destination safety checks; never echo free text.
+        "project": None,
+        "project_ref": (manifest.get("project_ref") if isinstance(manifest.get("project_ref"), str) and re.fullmatch(r"[a-z0-9]{20}", manifest["project_ref"]) else None),
         "mode": manifest.get("mode"),
         "backup_dir": str(backup_dir),
         "manifest": str(manifest_path),
@@ -1232,11 +1268,12 @@ def validate_database_backup(path: str) -> dict[str, Any]:
     except (OSError, ValueError):
         report.update(ok=False, integrity_ok=False, error="Manifest changed or became unreadable.")
         return report
-    # Metadata is displayed locally as text only, never executed.
-    for key in ("account", "created_at", "supabase_cli_version"):
-        value = manifest.get(key)
-        report[key] = value[:160] if isinstance(value, str) else None
+    # Free-form manifest metadata is deliberately not returned: a backup is
+    # external/untrusted input and reports must not become a secret/SQL echo.
     report["total_bytes"] = sum(item["bytes"] for item in integrity["files"])
+    report["integrity_fingerprint"] = hashlib.sha256(
+        json.dumps([(item["name"], item["sha256"]) for item in integrity["files"]], separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
     report["structure_ok"] = True
     # Empty roles/data dumps are legitimate when a database has no custom roles/data.
     # Use pg_dump header or common SQL statements as evidence, not a grammar.
@@ -1274,7 +1311,23 @@ def import_database_backup(path: str) -> dict[str, Any]:
     report["external"] = True
     report["imported"] = bool(report.get("ok"))
     report["import_mode"] = "report-only"
+    if report["imported"]:
+        paths = _read_import_catalog()
+        location = report["backup_dir"]
+        if location not in paths:
+            paths.append(location)
+            _write_import_catalog(paths)
     return report
+
+
+def list_imported_database_backups() -> dict[str, Any]:
+    """Return revalidated imported paths so browser refresh cannot re-trust stale bytes."""
+    backups = []
+    for path in _read_import_catalog():
+        report = validate_database_backup(path)
+        report.update(external=True, imported=bool(report.get("ok")), import_mode="report-only")
+        backups.append(report)
+    return {"backups": backups, "count": len(backups)}
 
 
 def execute_project_sql(

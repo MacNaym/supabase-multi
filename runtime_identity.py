@@ -16,6 +16,7 @@ RUNTIME_FILES = (
     ROOT / "mcp" / "server.py",
     ROOT / "mcp" / "runtime_bridge.py",
     ROOT / "mcp" / "headless_control_plane.py",
+    ROOT / "mcp" / "restore_engine.py",
 )
 APP_VERSION = "3.10.0"
 BACKUP_MODULE_VERSION = "1.5.0"
