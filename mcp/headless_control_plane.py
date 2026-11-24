@@ -767,6 +767,8 @@ def _backup_source(
         or str(project.get("db_url_env") or "").strip()
         or derived_env
     )
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_name):
+        raise ValueError("db_url_env must be a valid environment-variable name.")
     db_url = read_token_env_value(env_name)
     if not db_url:
         raise ValueError(
@@ -836,7 +838,7 @@ def backup_database(
     cli = _supabase_cli()
 
     root = Path(destination).expanduser() if destination else DEFAULT_BACKUP_ROOT
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%fZ")
     backup_dir = root / _safe_backup_name(project_name) / timestamp
     backup_dir.mkdir(parents=True, exist_ok=False)
 
@@ -937,7 +939,13 @@ def verify_database_backup(path: str) -> dict[str, Any]:
     checks = []
     all_ok = True
 
-    for item in manifest.get("files", []):
+    manifest_files = manifest.get("files")
+    if not isinstance(manifest_files, list) or not manifest_files:
+        raise ValueError("Backup manifest contains no files.")
+
+    for item in manifest_files:
+        if not isinstance(item, dict):
+            raise ValueError("Backup manifest contains an invalid file entry.")
         name = str(item.get("name") or "").strip()
         if not name:
             all_ok = False
