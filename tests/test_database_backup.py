@@ -104,6 +104,7 @@ def test_backup_database_uses_project_ref_and_pat(monkeypatch, tmp_path, mode, e
     for item in dump_calls:
         call = item["command"]
         assert "--remote=abcdefghijklmnopqrst" in call
+        assert call[call.index("--profile")+1] == "supabase"
         assert "--password" not in call
         assert item["env"]["SUPABASE_ACCESS_TOKEN"] == access_token
 
