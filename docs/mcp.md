@@ -131,3 +131,7 @@ The dashboard uses `POST /api/backup-start` and polls `GET /api/backup-job`. The
 ### Backup validation and import (3.10.0 development)
 
 Select Import backup in the Backup tab to choose an existing folder containing manifest.json. This is a read-only in-place import for inspection, not a file copy or a database restore. Verify in history also runs advanced validation. The report includes source metadata, SHA-256, file sizes and heuristic UTF-8/SQL text checks. No SQL is executed. Validating a dump is not proof of authenticity, safety or restorability; only use trusted dumps. Partial backups can pass validation but are not full restore candidates. No PAT is needed for local validation. Revalidate before any future restore.
+
+### Isolated restore test (development)
+
+Validate a trusted full backup, enter a locally installed `supabase/postgres@sha256:...` image digest, confirm trust and click Test restore. The temporary container has no published ports or network. The report provides an inventory, not a source comparison or guarantee of application recovery. No remote restore is enabled. Job status lives in memory; do not stop the server during a restore. A failed cleanup reports the container name for manual review. Use only trusted SQL and images.
