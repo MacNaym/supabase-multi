@@ -89,3 +89,5 @@ Initial public pre-release.
 - Repository-to-project resolution.
 - Diagnostics and orphaned-secret detection.
 
+
+- 3.10.0 development B1: strict manifest inventory, local in-place import and non-executing structural validation with detailed report. Restore not implemented yet.
