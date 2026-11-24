@@ -46,6 +46,40 @@ def safe_restore_diagnostic(stderr: str) -> dict:
     return result
 
 
+def copy_requirements(path):
+    """Inventory pg_dump COPY headers, skipping payload until the terminator."""
+    ident = r'"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*'
+    pattern = re.compile(r"^COPY ("+ident+r")\.("+ident+r") \((.+)\) FROM stdin;$", re.I)
+    def unquote(value):
+        return value[1:-1].replace('""','"') if value.startswith('"') else value.lower()
+    requirements = set()
+    inside = False
+    with Path(path).open("r",encoding="utf-8-sig") as stream:
+        for line in stream:
+            line = line.rstrip("\r\n")
+            if inside:
+                if line == r"\.":
+                    inside = False
+                continue
+            if not line.startswith("COPY "):
+                continue
+            match = pattern.fullmatch(line)
+            if not match:
+                raise ValueError("Unsupported COPY header; cannot check compatibility.")
+            cols = re.findall(ident,match.group(3))
+            if not cols or not re.fullmatch(r"(?:"+ident+r")(?:,\s*(?:"+ident+r"))*",match.group(3)):
+                raise ValueError("Unsupported COPY column list.")
+            requirements.update((unquote(match.group(1)),unquote(match.group(2)),unquote(col)) for col in cols)
+            inside = True
+    if inside:
+        raise ValueError("Unterminated COPY data.")
+    return requirements
+
+
+def compare_copy_columns(required, available):
+    return sorted(set(required)-{tuple(row) for row in available})
+
+
 def test_restore(path: str, *, image: str, trusted: bool = False, approved_fingerprint: str | None = None, progress=None):
     """Restore into a new network-disabled container; discard it afterwards.
 
@@ -149,6 +183,19 @@ def test_restore(path: str, *, image: str, trusted: bool = False, approved_finge
             restore_file("roles.sql")
             emit("restore_schema")
             restore_file("schema.sql")
+            emit("compatibility")
+            required = copy_requirements(stage/"data.sql")
+            report["compatibility"] = {"copy_columns":len(required),"missing":[],"scope":"COPY column presence only"}
+            if required:
+                inventory_sql = """SELECT coalesce(json_agg(json_build_array(table_schema,table_name,column_name)), '[]'::json) FROM information_schema.columns"""
+                proc = run(["exec","-e","PGPASSWORD="+password,name,"psql","-X","-h","127.0.0.1",
+                            "-U","postgres","-d","postgres","-At","--set","ON_ERROR_STOP=1","-c",inventory_sql])
+                available = json.loads(proc.stdout)
+                missing = compare_copy_columns(required,available)
+                report["compatibility"]["missing"] = missing[:100]
+                report["compatibility"]["missing_count"] = len(missing)
+                if missing:
+                    raise RuntimeError("Destination schema does not satisfy COPY requirements.")
             emit("restore_data")
             restore_file("data.sql", replica_mode=True)
             emit("postcheck")
