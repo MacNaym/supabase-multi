@@ -1,3 +1,9 @@
+## Backup 1.3 development
+
+- Dashboard background job with phase progress, elapsed time, bytes on disk and polling across browser refreshes.
+- Automatically verify backup hashes after generation; retain explicit Verify action.
+- Preserve synchronous MCP backup API. Dashboard job state is in-memory; cross-process job coordination is not yet implemented.
+
 ## Supabase Multi 3.9.1 (development)
 
 - Single product version from runtime_identity; dashboard and MCP report the same version. Backup module numbering and external Supabase CLI version are separate.
