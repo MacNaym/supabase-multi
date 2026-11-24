@@ -295,3 +295,69 @@ def test_profile_error_does_not_trigger_password_fallback(monkeypatch, tmp_path)
     assert len(calls) == 1
     assert "--password" not in calls[0]
     assert not any(tmp_path.rglob("manifest.json"))
+
+
+def test_ipv6_fallback_reuses_pooler_for_all_dumps(monkeypatch, tmp_path):
+    module = load_module()
+    install_project(monkeypatch, module)
+    fake_cli(monkeypatch, module)
+    calls = []
+    pooler_requests = []
+    ref = "abcdefghijklmnopqrst"
+    secret = "temporary-password"
+    url = f"postgresql://cli_login_postgres.{ref}:{secret}@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require"
+    def pooler(project_ref, token, password):
+        pooler_requests.append((project_ref, token, password))
+        return url
+    monkeypatch.setattr(module, "_backup_pooler_url", pooler)
+    def run(command, **kwargs):
+        if command[-1] == "--version":
+            return SimpleNamespace(returncode=0, stdout="3.3.0", stderr="")
+        target = next(x for x in command if x.startswith("--remote="))
+        calls.append(target)
+        if target == "--remote=" + ref:
+            return SimpleNamespace(returncode=1, stdout="", stderr="IPv6 is not supported on your current network")
+        Path(command[command.index("-f")+1]).write_text("dump", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+    monkeypatch.setattr(module.subprocess, "run", run)
+    result = module.backup_database("example-prod", mode="full", destination=str(tmp_path))
+    assert calls == ["--remote="+ref] + ["--remote="+url]*3
+    assert len(pooler_requests) == 1
+    assert pooler_requests[0][0] == ref
+    assert result["credential_mode"] == "session-pooler"
+    assert secret not in json.dumps(result)
+    assert secret not in Path(result["manifest"]).read_text(encoding="utf-8")
+
+
+def test_pooler_lookup_uses_same_project_and_encodes_password(monkeypatch):
+    module = load_module()
+    ref = "abcdefghijklmnopqrst"
+    calls = []
+    def request(project_ref, token, suffix, body=None):
+        calls.append((project_ref, token, suffix, body))
+        if body is None:
+            return [{"database_type":"PRIMARY","db_host":"aws-0-eu-central-1.pooler.supabase.com","db_user":"postgres."+ref,"db_name":"postgres"}]
+        return {"role":"cli_login_postgres","password":"p@ss:/word","ttl_seconds":600}
+    monkeypatch.setattr(module, "_backup_management_request", request)
+    url = module._backup_pooler_url(ref, "test-token")
+    assert url == "postgresql://cli_login_postgres."+ref+":p%40ss%3A%2Fword@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require"
+    assert all(x[0] == ref and x[1] == "test-token" for x in calls)
+    assert calls[1][3] == {"read_only":False}
+
+
+def test_pooler_rejects_other_project(monkeypatch):
+    module = load_module()
+    monkeypatch.setattr(module, "_backup_management_request", lambda *a: [
+        {"database_type":"PRIMARY","db_host":"aws-0-eu-central-1.pooler.supabase.com","db_user":"postgres.otherproject","db_name":"postgres"}
+    ])
+    with pytest.raises(RuntimeError, match="unique primary"):
+        module._backup_pooler_url("abcdefghijklmnopqrst", "test-token")
+
+
+def test_pooler_error_never_returns_credentials(monkeypatch, tmp_path):
+    module = load_module()
+    url = "postgresql://user:secret@host:5432/postgres"
+    monkeypatch.setattr(module.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1, stdout="", stderr=url))
+    with pytest.raises(RuntimeError) as exc:
+        module._run_backup_dump("supabase", "abcdefghijklmnopqrst", "test-token", tmp_path/"schema.sql", [], pooler_url=url)
+    assert "secret" not in str(exc.value)
