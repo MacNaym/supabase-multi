@@ -1,3 +1,13 @@
+## 2026-11-24
+
+### Added
+- Live `backup_database` capability with `schema`, `data`, and `full` modes.
+- Full logical backups create roles, schema, data, and a SHA-256 manifest.
+- Live `verify_database_backup` capability detects missing or modified backup files.
+- Database connection strings are resolved only from environment variables and are never returned or persisted as raw values.
+- Default backup location is `~/SupabaseMultiBackups`, with `SUPABASE_MULTI_BACKUP_DIR` and per-call destination overrides.
+- Backup runtime uses the current Supabase CLI `db dump --remote=...` flow.
+
 ﻿# Changelog
 
 All notable changes to Supabase Multi will be documented in this file.
