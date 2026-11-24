@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
 if str(MCP_DIR) not in sys.path:
     sys.path.insert(0, str(MCP_DIR))
 
-from runtime_identity import runtime_payload, source_fingerprint
+from runtime_identity import APP_VERSION, runtime_payload, source_fingerprint
 
 CONTROL_PLANE = ROOT / "local-ui" / "server.py"
 BASE_URL = os.environ.get("SUPABASE_MULTI_URL", "http://127.0.0.1:8765").rstrip("/")
@@ -218,7 +218,7 @@ def get_capabilities() -> dict[str, Any]:
         control_plane_current = _runtime_is_current(local_runtime)
 
     return {
-        "server_version": "0.2.0",
+        "server_version": APP_VERSION,
         "generation": LIVE_CAPABILITY_GENERATION,
         "runtime": {
             "bridge": runtime_payload("runtime-bridge"),
