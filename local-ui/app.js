@@ -658,14 +658,55 @@ async function refreshBackupHistory(){
   }
 }
 
+let validatedBackupPath="";
+let validationBusy=false;
+async function validateBackupPath(path){
+  if(validationBusy)return;
+  validationBusy=true;
+  validatedBackupPath="";
+  const panel=$("#backupValidationReport");
+  panel.classList.remove("hidden");
+  $("#backupValidationStatus").textContent=currentLang==="it"?"Verifica in corso…":"Validating…";
+  $("#backupValidationDetails").textContent="";
+  try{
+    const {result:r}=await api("/api/backup-validate",{path});
+    const it=currentLang==="it";
+    $("#backupValidationStatus").textContent=r.ok?(it?"Controlli superati — ripristino non collaudato":"Checks passed — restore not tested"):(it?"Validazione non superata":"Validation failed");
+    const lines=[
+      (it?"Percorso: ":"Path: ")+(r.backup_dir||path),
+      (it?"Progetto: ":"Project: ")+(r.project||"—")+" / "+(r.project_ref||"—"),
+      "Account: "+(r.account||"—"), "Mode: "+(r.mode||"—"),
+      "Date: "+(r.created_at||"—"), "CLI: "+(r.supabase_cli_version||"—"),
+      "Bytes: "+(r.total_bytes??"—"),
+      "SHA-256: "+(r.integrity_ok?"PASS":"FAIL"),
+      (it?"Struttura SQL (euristica): ":"SQL structure (heuristic): ")+(r.structure_ok?"PASS":"FAIL"),
+      ...(r.files||[]).map(f=>f.name+" · "+(f.ok?"SHA-256 OK":"SHA-256 FAIL")+" · "+(f.bytes??"—")+" B · "+(f.structure_note||f.error||"")),
+      ...(r.error?[r.error]:[]), ...(r.limitations||[])
+    ];
+    $("#backupValidationDetails").textContent=lines.join("\n");
+    if(r.ok)validatedBackupPath=r.backup_dir;
+    show(r.ok?(it?"Backup verificato; ripristino da collaudare.":"Backup verified; restore not tested."):(it?"Backup non valido.":"Backup validation failed."),!r.ok);
+  }catch(e){
+    $("#backupValidationStatus").textContent="Validation failed";
+    $("#backupValidationDetails").textContent=e.message;
+    show(e.message,true);
+  }finally{validationBusy=false;}
+}
+$("#backupImportBtn").onclick=async function(){
+  if(validationBusy)return;
+  this.disabled=true;
+  try{
+    const r=await api("/api/backup-pick-folder",{initial_dir:validatedBackupPath||""});
+    if(r.selected)await validateBackupPath(r.selected);
+  }catch(e){show(e.message,true)}
+  finally{this.disabled=false;}
+};
+
 function bindBackupHistoryButtons(){
   document.querySelectorAll(".backup-verify-btn").forEach(function(btn){
     btn.onclick=async function(){
       try{
-        const r=await api("/api/backup-verify",{path:btn.dataset.path});
-        const ok=!!(r.result&&r.result.ok);
-        show(ok?"Backup verificato: hash e dimensioni corretti.":"Backup NON valido: almeno un file manca o è stato modificato.",!ok);
-        log(JSON.stringify(r.result,null,2));
+        await validateBackupPath(btn.dataset.path);
       }catch(e){show(e.message,true)}
     };
   });
