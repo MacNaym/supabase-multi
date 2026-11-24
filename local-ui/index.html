@@ -185,6 +185,15 @@
           <p id="backupProgressStatus"></p>
         </section>
         <section class="dashboard-section">
+          <h3 id="backupValidationHeading">Validate / Import Backup</h3>
+          <p id="backupImportHint" class="muted">Select an existing backup folder. Files stay in their original location.</p>
+          <button id="backupImportBtn" class="secondary">Import backup</button>
+          <section id="backupValidationReport" class="hidden" aria-live="polite">
+            <h4 id="backupValidationStatus"></h4>
+            <pre id="backupValidationDetails" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+          </section>
+        </section>
+        <section class="dashboard-section">
           <div class="section-head">
             <div><h3 data-i18n="backup_history">Backup history</h3><p id="backupRootHint" class="muted">—</p></div>
           </div>
