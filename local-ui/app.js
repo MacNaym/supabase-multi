@@ -69,6 +69,7 @@ function showView(name){
   document.querySelectorAll(".view-panel").forEach(p=>p.classList.toggle("active",p.dataset.viewPanel===name));
   document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===name));
   window.scrollTo({top:0,behavior:"smooth"});
+  if(name==="backup")refreshBackupHistory();
 }
 function bindNavigation(){
   document.querySelectorAll(".nav-btn").forEach(btn=>btn.onclick=()=>showView(btn.dataset.view));
