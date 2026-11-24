@@ -1165,42 +1165,32 @@ def verify_database_backup(path: str) -> dict[str, Any]:
     all_ok = True
 
     manifest_files = manifest.get("files")
-    if not isinstance(manifest_files, list) or not manifest_files:
-        raise ValueError("Backup manifest contains no files.")
-
+    expected = {"full": {"roles.sql", "schema.sql", "data.sql"}, "schema": {"schema.sql"}, "data": {"data.sql"}}.get(manifest.get("mode"))
+    if not expected or not isinstance(manifest_files, list) or any(not isinstance(x, dict) for x in manifest_files):
+        raise ValueError("Invalid backup manifest mode or files.")
+    names = [x.get("name") for x in manifest_files]
+    if any(not isinstance(n, str) for n in names) or len(names) != len(expected) or set(names) != expected:
+        raise ValueError("Backup manifest contains missing, duplicate or unexpected files.")
+    if manifest_path.is_symlink():
+        raise ValueError("Symbolic link manifests are not supported.")
     for item in manifest_files:
-        if not isinstance(item, dict):
-            raise ValueError("Backup manifest contains an invalid file entry.")
-        name = str(item.get("name") or "").strip()
-        if not name:
+        name = item["name"]
+        file_path = backup_dir / name
+        if file_path.is_symlink() or not file_path.is_file() or file_path.resolve().parent != backup_dir:
             all_ok = False
-            checks.append({"name": name, "ok": False, "error": "Missing file name."})
+            checks.append({"name":name,"ok":False,"error":"Missing or unsafe file."})
             continue
-
-        file_path = (backup_dir / name).resolve()
-        if file_path.parent != backup_dir:
+        expected_size = item.get("bytes")
+        expected_hash = item.get("sha256")
+        if type(expected_size) is not int or expected_size <= 0 or not isinstance(expected_hash,str) or not re.fullmatch(r"[0-9a-f]{64}",expected_hash):
             all_ok = False
-            checks.append({"name": name, "ok": False, "error": "Unsafe manifest path."})
+            checks.append({"name":name,"ok":False,"error":"Invalid size or hash metadata."})
             continue
-        if not file_path.is_file():
-            all_ok = False
-            checks.append({"name": name, "ok": False, "error": "File missing."})
-            continue
-
         actual_size = file_path.stat().st_size
         actual_hash = _sha256_file(file_path)
-        expected_size = int(item.get("bytes", -1))
-        expected_hash = str(item.get("sha256") or "")
         ok = actual_size == expected_size and actual_hash == expected_hash
         all_ok = all_ok and ok
-        checks.append(
-            {
-                "name": name,
-                "ok": ok,
-                "bytes": actual_size,
-                "sha256": actual_hash,
-            }
-        )
+        checks.append({"name":name,"ok":ok,"bytes":actual_size,"sha256":actual_hash})
 
     return {
         "ok": all_ok,
