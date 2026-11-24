@@ -361,3 +361,58 @@ def test_pooler_error_never_returns_credentials(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError) as exc:
         module._run_backup_dump("supabase", "abcdefghijklmnopqrst", "test-token", tmp_path/"schema.sql", [], pooler_url=url)
     assert "secret" not in str(exc.value)
+
+
+@pytest.mark.parametrize("mode,expected", [
+    ("full", ["preflight","connection","roles","schema","data","manifest","verify","complete"]),
+    ("schema", ["preflight","connection","schema","manifest","verify","complete"]),
+    ("data", ["preflight","connection","data","manifest","verify","complete"]),
+])
+def test_backup_reports_real_phases(monkeypatch, tmp_path, mode, expected):
+    module = load_module()
+    install_project(monkeypatch, module)
+    fake_cli(monkeypatch, module)
+    events = []
+    result = module.backup_database("example-prod", mode=mode, destination=str(tmp_path),
+                                    progress=lambda phase, **kw: events.append(phase))
+    assert events == expected
+    assert result["verified"] is True
+
+
+def test_backup_job_duplicate_and_completion(monkeypatch, tmp_path):
+    import threading
+    import sys
+    monkeypatch.syspath_prepend(str(ROOT))
+    spec = importlib.util.spec_from_file_location("backup_ui_job_test", ROOT/"local-ui"/"server.py")
+    ui = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ui)
+    release = threading.Event()
+    entered = threading.Event()
+    finished = threading.Event()
+    reg = {"accounts":{"a":{}}, "projects":{"p":{"account":"a","project_ref":"abcdefghijklmnopqrst"}}}
+    monkeypatch.setattr(ui, "read_registry", lambda: reg)
+    def backup(project, **kwargs):
+        kwargs["progress"]("schema", folder=str(tmp_path))
+        entered.set()
+        assert release.wait(5)
+        kwargs["progress"]("complete")
+        return {"backup_dir":str(tmp_path)}
+    monkeypatch.setattr(ui, "backup_backend", lambda: SimpleNamespace(backup_database=backup))
+    real_thread = threading.Thread
+    def thread_factory(target, **kwargs):
+        def run():
+            try: target()
+            finally: finished.set()
+        return real_thread(target=run, **kwargs)
+    monkeypatch.setattr(ui.threading, "Thread", thread_factory)
+    try:
+        job_id = ui.start_backup_job("p","a","schema",str(tmp_path),"abcdefghijklmnopqrst")
+        assert entered.wait(5)
+        job = ui.backup_job_snapshot()
+        assert job["id"] == job_id and job["status"] == "running" and job["phase"] == "schema"
+        with pytest.raises(ValueError, match="already in progress"):
+            ui.start_backup_job("p","a","schema",str(tmp_path),"abcdefghijklmnopqrst")
+    finally:
+        release.set()
+    assert finished.wait(5)
+    assert ui.backup_job_snapshot()["status"] == "completed"
