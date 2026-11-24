@@ -1,6 +1,6 @@
 ﻿
 from __future__ import annotations
-import base64, ctypes, ctypes.wintypes, hashlib, json, os, secrets, shutil, subprocess, sys, threading, time
+import base64, ctypes, ctypes.wintypes, hashlib, importlib, json, os, secrets, shutil, subprocess, sys, threading, time
 import urllib.parse, urllib.request, urllib.error, webbrowser
 from datetime import datetime
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
@@ -14,6 +14,14 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from runtime_identity import runtime_payload
+
+MCP_DIR = ROOT / "mcp"
+if str(MCP_DIR) not in sys.path:
+    sys.path.insert(0, str(MCP_DIR))
+
+def backup_backend():
+    import headless_control_plane
+    return importlib.reload(headless_control_plane)
 
 UI_DIR = Path(__file__).resolve().parent
 REGISTRY = ROOT / "registry.json"
@@ -1097,6 +1105,7 @@ def state_payload(check_remote=True):
             "read_only":p.get("read_only",False),
             "token_env":te or "",
             "token_ok":env_exists(te) if te else False,
+            "backup_dir":p.get("backup_dir",""),
             "enabled":p.get("enabled",True),
             "platform_seen":platform_seen,
             "platform_status_raw":raw_status,
@@ -1115,6 +1124,50 @@ def state_payload(check_remote=True):
         "orphan_secrets":orphaned_supabase_secret_envs(reg),
         "platform_checked_at":time.strftime("%Y-%m-%dT%H:%M:%S")
     }
+
+
+def select_backup_folder(initial_dir=""):
+    if os.name != "nt":
+        raise RuntimeError("Folder picker is currently available on Windows only.")
+    initial = str(initial_dir or "").strip()
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms;"
+        "$d=New-Object System.Windows.Forms.FolderBrowserDialog;"
+        "$d.Description='Scegli dove salvare i backup Supabase Multi';"
+        "$d.ShowNewFolderButton=$true;"
+    )
+    if initial:
+        escaped = initial.replace("'", "''")
+        script += f"$d.SelectedPath='{escaped}';"
+    script += (
+        "$r=$d.ShowDialog();"
+        "if($r -eq [System.Windows.Forms.DialogResult]::OK){"
+        "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"
+        "Write-Output $d.SelectedPath"
+        "}"
+    )
+    proc = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-STA", "-Command", script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError((proc.stderr or proc.stdout or "Folder picker failed.").strip()[:1000])
+    return (proc.stdout or "").strip()
+
+
+def open_backup_folder(path):
+    target = Path(str(path or "").strip()).expanduser()
+    if not target.is_dir():
+        raise ValueError("Backup folder does not exist.")
+    if os.name == "nt":
+        os.startfile(str(target))
+        return
+    raise RuntimeError("Open folder is currently available on Windows only.")
+
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw): super().__init__(*a,directory=str(UI_DIR),**kw)
@@ -1176,6 +1229,53 @@ class Handler(SimpleHTTPRequestHandler):
                 query=(body.get("query") or "").strip()
                 result=execute_project_sql(read_registry(),project,query,read_only=False)
                 self.send_json({"ok":True,"message":"SQL execution completed.","result":result});return
+            if path=="/api/backup-pick-folder":
+                selected=select_backup_folder(body.get("initial_dir",""))
+                self.send_json({"ok":True,"selected":selected,"cancelled":not bool(selected)});return
+            if path=="/api/backup-settings":
+                project=(body.get("project") or "").strip()
+                backup_dir=(body.get("backup_dir") or "").strip()
+                reg=read_registry()
+                p=reg.get("projects",{}).get(project)
+                if not p: raise ValueError("Project not found.")
+                if backup_dir:
+                    target=Path(backup_dir).expanduser()
+                    target.mkdir(parents=True,exist_ok=True)
+                    p["backup_dir"]=str(target)
+                else:
+                    p.pop("backup_dir",None)
+                write_registry(reg)
+                self.send_json({"ok":True,"message":"Backup destination saved.","project":project,"backup_dir":p.get("backup_dir","")});return
+            if path=="/api/backup-create":
+                project=(body.get("project") or "").strip()
+                mode=(body.get("mode") or "full").strip().lower()
+                destination=(body.get("destination") or "").strip() or None
+                save_default=body.get("save_default") is True
+                reg=read_registry()
+                p=reg.get("projects",{}).get(project)
+                if not p: raise ValueError("Project not found.")
+                if destination:
+                    target=Path(destination).expanduser()
+                    target.mkdir(parents=True,exist_ok=True)
+                    destination=str(target)
+                    if save_default:
+                        p["backup_dir"]=destination
+                        write_registry(reg)
+                result=backup_backend().backup_database(project,mode=mode,destination=destination)
+                self.send_json({"ok":True,"message":f"Backup {mode} completed for {project}.","result":result});return
+            if path=="/api/backup-list":
+                project=(body.get("project") or "").strip()
+                destination=(body.get("destination") or "").strip() or None
+                result=backup_backend().list_database_backups(project,destination=destination)
+                self.send_json({"ok":True,"result":result});return
+            if path=="/api/backup-verify":
+                backup_path=(body.get("path") or "").strip()
+                result=backup_backend().verify_database_backup(backup_path)
+                self.send_json({"ok":True,"message":"Backup verification completed.","result":result});return
+            if path=="/api/backup-open":
+                backup_path=(body.get("path") or "").strip()
+                open_backup_folder(backup_path)
+                self.send_json({"ok":True,"message":"Backup folder opened."});return
             if path=="/api/project-token-copy":
                 project=(body.get("project") or "").strip()
                 source_env=(body.get("source_env") or "").strip()
