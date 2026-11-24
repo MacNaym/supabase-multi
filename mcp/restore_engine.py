@@ -1,4 +1,4 @@
-"""Local disposable restore smoke test. Never accepts a remote connection URL."""
+"""Disposable restore smoke test and fail-closed remote destination planning."""
 from __future__ import annotations
 
 import hashlib
@@ -123,3 +123,56 @@ def test_restore(path: str, *, image: str, trusted: bool = False, progress=None)
                 report["cleanup_container"]=name
         report["elapsed_seconds"]=round(time.monotonic()-started,2)
     return report
+
+
+def plan_remote_restore(path: str, *, account: str, project: str, expected_ref: str,
+                        trusted: bool = False, registry=None):
+    """Read-only planning; never connects to or writes to a remote database.
+
+    Explicit opt-in is necessary but not sufficient to execute a restore.
+    Unknown environments and ambiguous aliases are rejected.
+    """
+    from headless_control_plane import read_registry
+    if trusted is not True:
+        raise ValueError("Explicit confirmation of trusted backup source is required.")
+    if not all(isinstance(v, str) and v.strip() for v in (account, project, expected_ref)):
+        raise ValueError("Account, target and exact reference are required.")
+    if not re.fullmatch(r"[a-z0-9]{20}", expected_ref):
+        raise ValueError("Invalid destination project reference.")
+    reg = read_registry() if registry is None else registry
+    target = reg.get("projects", {}).get(project)
+    if account not in reg.get("accounts", {}) or not target or target.get("account") != account:
+        raise ValueError("Target does not belong to selected account.")
+    if target.get("project_ref") != expected_ref:
+        raise ValueError("Destination reference mismatch.")
+    if not target.get("enabled", True) or target.get("read_only") is not False:
+        raise ValueError("Target disabled or protected by read-only policy.")
+    if target.get("environment") not in {"development", "staging", "test"}:
+        raise ValueError("Only explicitly classified non-production destinations are allowed.")
+    if target.get("restore_enabled") is not True:
+        raise ValueError("Destination must explicitly opt into restore.")
+    aliases = [p for p in reg.get("projects", {}).values() if p.get("project_ref") == expected_ref]
+    if len(aliases) != 1:
+        raise ValueError("Destination reference has ambiguous registry aliases.")
+    source = validate_database_backup(path)
+    if not source.get("ok") or not source.get("full_backup"):
+        raise ValueError("A complete validated backup is required.")
+    source_ref = source.get("project_ref")
+    if not isinstance(source_ref, str) or not re.fullmatch(r"[a-z0-9]{20}", source_ref):
+        raise ValueError("Backup source reference is missing or invalid.")
+    if source_ref == expected_ref:
+        raise ValueError("Restoring onto the source project is prohibited.")
+    return {
+        "ok": True, "execution_enabled": False, "remote_checked": False,
+        "source_ref": source_ref, "destination_ref": expected_ref,
+        "account": account, "project": project,
+        "backup_dir": source["backup_dir"],
+        "files": [{"name": f["name"], "sha256": f["sha256"]} for f in source["files"]],
+        "remaining_checks": [
+            "Verify target identity, environment and database permissions remotely.",
+            "Verify PostgreSQL versions, extensions and managed schemas.",
+            "Require empty application target and verified preventive backup.",
+            "Review cron jobs, webhooks, foreign servers and external side effects.",
+            "Require explicit destination reference confirmation and isolated restore test.",
+        ],
+    }
