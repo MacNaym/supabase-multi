@@ -612,3 +612,17 @@ def test_control_plane_browser_autostart_can_be_disabled(monkeypatch):
     assert ui.browser_autostart_enabled(["server.py", "--no-browser"], {}) is False
     assert ui.browser_autostart_enabled(["server.py"], {"SUPABASE_MULTI_NO_BROWSER": "1"}) is False
     assert ui.browser_autostart_enabled(["server.py"], {"SUPABASE_MULTI_LAUNCHER": "1"}) is False
+
+
+def test_postgres_source_version_uses_source_not_client(tmp_path):
+    module=load_module()
+    (tmp_path/"schema.sql").write_text("-- PostgreSQL database dump\n-- Dumped from database version 17.6\n-- Dumped by pg_dump version 17.12\n",encoding="utf-8")
+    assert module.backup_postgres_version(tmp_path)=="17.6"
+    (tmp_path/"data.sql").write_text("-- Dumped from database version 17.12\n",encoding="utf-8")
+    assert module.backup_postgres_version(tmp_path) is None
+
+
+def test_postgres_source_version_missing_header(tmp_path):
+    module=load_module()
+    (tmp_path/"schema.sql").write_text("-- Dumped by pg_dump version 17.12\n",encoding="utf-8")
+    assert module.backup_postgres_version(tmp_path) is None
