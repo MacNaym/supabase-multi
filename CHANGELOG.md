@@ -91,3 +91,5 @@ Initial public pre-release.
 
 
 - 3.10.0 development B1: strict manifest inventory, local in-place import and non-executing structural validation with detailed report. Restore not implemented yet.
+
+- 3.10.0-dev: dashboard isolated restore job, progress, inventory and cleanup report; remote planning only, remote execution disabled.
