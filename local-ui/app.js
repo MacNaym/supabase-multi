@@ -715,11 +715,13 @@ if($("#backupSaveDestinationBtn"))$("#backupSaveDestinationBtn").onclick=async f
 
 let backupLastStatus="";
 let backupPollRunning=false;
+let backupStarting=false;
 async function pollBackupJob(){
   if(backupPollRunning)return;
   backupPollRunning=true;
   try{
     const {job}=await api("/api/backup-job");
+    if(backupStarting)return;
     if(!job){
       if(backupBusy){
         backupBusy=false;
@@ -736,7 +738,7 @@ async function pollBackupJob(){
     $("#backupProgressBar").max=job.phases.length;
     $("#backupProgressBar").value=job.completed;
     $("#backupProgressPhase").textContent=(labels[job.phase]||job.phase)+" · "+job.completed+"/"+job.phases.length;
-    $("#backupProgressStats").textContent=(it?"Tempo: ":"Elapsed: ")+job.elapsed_seconds+" s · "+(it?"File prodotti: ":"Files written: ")+job.bytes_written.toLocaleString()+" B · "+(it?"Server raggiungibile":"Server reachable");
+    $("#backupProgressStats").textContent=(it?"Tempo: ":"Elapsed: ")+job.elapsed_seconds+" s · "+(it?"File prodotti: ":"Files written: ")+job.bytes_written.toLocaleString()+" B · "+(it?"Fase corrente: ":"Current phase: ")+Math.max(0,Math.floor(job.server_time-job.phase_started_at))+" s · "+(it?"Server raggiungibile":"Server reachable");
     $("#backupProgressStatus").textContent=active?(it?"In corso — la fase attuale può richiedere tempo.":"Running — current phase may take time."):(job.status==="completed"?(it?"Backup completato e verificato.":"Backup completed and verified."):(job.error||"Backup failed"));
     backupBusy=active;
     updateBackupControls();
@@ -754,11 +756,14 @@ if($("#backupCreateBtn"))$("#backupCreateBtn").onclick=async function(){
   const selected=backupSelection();
   if(!selected||backupBusy)return;
   backupBusy=true;
+  backupStarting=true;
   updateBackupControls();
   try{
     await api("/api/backup-start",{account:selected.account,project:selected.project,mode:$("#backupMode").value,destination:($("#backupDestination").value||"").trim()||null});
+    backupStarting=false;
     await pollBackupJob();
   }catch(e){
+    backupStarting=false;
     backupBusy=false;
     updateBackupControls();
     show(e.message,true);
