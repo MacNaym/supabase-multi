@@ -1328,6 +1328,19 @@ class Handler(SimpleHTTPRequestHandler):
             raise ValueError("Restore requests must originate from the local dashboard.")
     def do_GET(self):
         p=urlparse(self.path)
+        if p.path=="/api/restore-images":
+            try:
+                from restore_engine import IMAGE_PATTERN
+                docker=shutil.which("docker")
+                if not docker: raise ValueError("Docker is not installed.")
+                ctx=subprocess.run([docker,"context","show"],capture_output=True,text=True,timeout=10)
+                context=ctx.stdout.strip()
+                if ctx.returncode or context not in {"default","desktop-linux"}: raise ValueError("Local Docker context required.")
+                result=subprocess.run([docker,"--context",context,"image","ls","--digests","--format","{{.Repository}}@{{.Digest}}"],capture_output=True,text=True,timeout=20)
+                if result.returncode: raise ValueError("Docker image discovery failed.")
+                self.send_json({"ok":True,"images":sorted({line.strip() for line in result.stdout.splitlines() if IMAGE_PATTERN.fullmatch(line.strip())})})
+            except Exception:self.send_json({"ok":False,"error":"Local Docker image discovery unavailable."},400)
+            return
         if p.path=="/api/restore-job":
             self.send_json({"ok":True,"job":restore_job_snapshot()});return
         if p.path=="/api/backup-job":
