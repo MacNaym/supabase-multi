@@ -154,7 +154,8 @@
         </div>
 
         <div class="backup-grid">
-          <label><span data-i18n="project">Project</span><select id="backupProject"></select></label>
+          <label><span data-i18n="account_title">Account</span><select id="backupAccount"></select></label>
+          <label><span data-i18n="project">Project</span><select id="backupProject" disabled></select><small id="backupProjectRef" class="muted">—</small></label>
           <label><span data-i18n="backup_mode">Backup type</span>
             <select id="backupMode">
               <option value="full" data-i18n="backup_full">Full — roles + schema + data</option>
@@ -171,8 +172,8 @@
         </div>
 
         <div class="row backup-actions">
-          <button id="backupCreateBtn" data-i18n="create_backup">Create backup</button>
-          <button id="backupSaveDestinationBtn" class="secondary" data-i18n="save_default_destination">Save as default</button>
+          <button id="backupCreateBtn" disabled data-i18n="create_backup">Create backup</button>
+          <button id="backupSaveDestinationBtn" disabled class="secondary" data-i18n="save_default_destination">Save as default</button>
           <span id="backupCredentialHint" class="muted" data-i18n="backup_credential_hint">Uses project ref + project PAT. Database password is only a fallback.</span>
         </div>
 

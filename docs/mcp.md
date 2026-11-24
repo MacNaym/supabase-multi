@@ -119,3 +119,7 @@ The normal Windows runtime remains local-first:
 - Supabase Multi can be started only when needed.
 
 The server also contains a portable headless backend and optional Streamable HTTP transport for advanced deployments. Transport selection and backend selection are intentionally separate so enabling Streamable HTTP does not silently change local routing behavior.
+
+### IPv4 session pooler fallback (Backup V1.2)
+
+Backups default to `auto`: try the exact project ref first, then resolve its primary shared session pooler through the Management API if the CLI reports IPv6 is unavailable. Optional per-project registry field `backup_connection_mode` accepts `auto`, `direct`, or `session-pooler`. The fallback requires `database_pooling_config_read` and, unless a project database password is already configured, `database_write` to mint a temporary CLI login. Temporary credentials are not written to the registry or manifest; the connection URL is passed to the local CLI process and is never returned in the API response. Local processes with sufficient privileges may inspect command-line arguments. A live backup and restore test is required to establish compatibility.

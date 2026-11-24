@@ -787,12 +787,74 @@ def _supabase_cli() -> str:
     return cli
 
 
+def _backup_preflight(cli: str) -> None:
+    help_result = subprocess.run([cli, "db", "dump", "--help"], capture_output=True, text=True, timeout=20)
+    if help_result.returncode or "--remote" not in (help_result.stdout or ""):
+        raise RuntimeError("Backup requires Supabase CLI v3 with --remote support. Update the CLI.")
+    docker = shutil.which("docker")
+    if not docker:
+        raise RuntimeError("Docker CLI not found. Install and start Docker before backing up.")
+    result = subprocess.run([docker, "info", "--format", "{{.ServerVersion}}"], capture_output=True, text=True, timeout=30)
+    if result.returncode or not (result.stdout or "").strip():
+        raise RuntimeError("Docker engine is not ready. Start Docker and retry.")
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _backup_management_request(project_ref: str, token: str, suffix: str, body=None):
+    if not re.fullmatch(r"[a-z0-9]{20}", project_ref):
+        raise ValueError("Invalid Supabase project ref.")
+    request = urllib.request.Request(
+        f"{MANAGEMENT_URL}/projects/{project_ref}/{suffix}",
+        data=json.dumps(body).encode("utf-8") if body is not None else None,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": MCP_USER_AGENT},
+        method="POST" if body is not None else "GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as exc:
+        permission = "database_write" if body is not None else "database_pooling_config_read"
+        raise RuntimeError(f"Pooler API {suffix} failed (HTTP {exc.code}). Check project PAT permission {permission}.") from None
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        raise RuntimeError(f"Pooler API {suffix} failed. Check network and API availability.") from None
+
+
+def _backup_pooler_url(project_ref: str, token: str, password: str = "") -> str:
+    configs = _backup_management_request(project_ref, token, "config/database/pooler")
+    if not isinstance(configs, list):
+        raise RuntimeError("Unexpected pooler configuration response.")
+    candidates = set()
+    for config in configs:
+        if not isinstance(config, dict) or config.get("database_type") != "PRIMARY":
+            continue
+        host = str(config.get("db_host") or "").lower()
+        if not re.fullmatch(r"[a-z0-9-]+\.pooler\.supabase\.com", host):
+            continue
+        if config.get("db_user") != "postgres." + project_ref or config.get("db_name") != "postgres":
+            continue
+        candidates.add(host)
+    if len(candidates) != 1:
+        raise RuntimeError("Could not resolve a unique primary Supabase session pooler for this project.")
+    host = candidates.pop()
+    role = "postgres"
+    if not password:
+        credentials = _backup_management_request(project_ref, token, "cli/login-role", {"read_only": False})
+        if not isinstance(credentials, dict):
+            raise RuntimeError("Unexpected temporary login response.")
+        role = credentials.get("role")
+        password = credentials.get("password")
+        if not isinstance(role, str) or not re.fullmatch(r"cli_login_[a-zA-Z0-9_]+", role) or not isinstance(password, str) or not password:
+            raise RuntimeError("Invalid temporary login credentials returned by Supabase.")
+    user = urllib.parse.quote(role + "." + project_ref, safe="")
+    secret = urllib.parse.quote(password, safe="")
+    return f"postgresql://{user}:{secret}@{host}:5432/postgres?sslmode=require"
 
 
 def _run_backup_dump(
@@ -803,12 +865,14 @@ def _run_backup_dump(
     extra_args: list[str],
     *,
     db_password: str = "",
+    pooler_url: str = "",
 ) -> None:
     command = [
         cli,
         "db",
         "dump",
-        f"--remote={project_ref}",
+        f"--remote={pooler_url or project_ref}",
+        "--profile", "supabase",
         "-f",
         str(output),
         *extra_args,
@@ -818,14 +882,18 @@ def _run_backup_dump(
 
     env = os.environ.copy()
     env["SUPABASE_ACCESS_TOKEN"] = access_token
-    proc = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        timeout=3600,
-        env=env,
-    )
+    env.pop("SUPABASE_PROFILE", None)
+    env.pop("SUPABASE_DB_PASSWORD", None)
+    try:
+        proc = subprocess.run(
+            command, capture_output=True, text=True, timeout=3600, env=env,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        raise RuntimeError("Supabase backup process could not complete (timeout or launch failure).") from None
     if proc.returncode != 0:
+        if pooler_url:
+            # Never echo CLI diagnostics that may include a credential-bearing URL.
+            raise RuntimeError("Session pooler dump failed. Check database login permissions, network and CLI compatibility.")
         detail = (proc.stderr or proc.stdout or "Supabase CLI db dump failed.").strip()
         detail = detail.replace(access_token, "[REDACTED_ACCESS_TOKEN]")
         if db_password:
@@ -847,6 +915,7 @@ def backup_database(
 
     project_ref, token_env, access_token, password_env, project = _backup_source(project_name)
     cli = _supabase_cli()
+    _backup_preflight(cli)
 
     configured_destination = str(project.get("backup_dir") or "").strip()
     root = (
@@ -881,9 +950,20 @@ def backup_database(
         )
 
     credential_mode = "temporary-login"
+    connection_mode = str(project.get("backup_connection_mode") or "auto").lower()
+    if connection_mode not in {"auto", "direct", "session-pooler"}:
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        raise ValueError("Invalid backup_connection_mode.")
+    pooler_url = ""
     db_password = ""
     try:
+        if connection_mode == "session-pooler":
+            pooler_url = _backup_pooler_url(project_ref, access_token, read_token_env_value(password_env))
+            credential_mode = "session-pooler"
         for file_name, args in jobs:
+            if pooler_url:
+                _run_backup_dump(cli, project_ref, access_token, backup_dir / file_name, args, pooler_url=pooler_url)
+                continue
             if db_password:
                 _run_backup_dump(
                     cli,
@@ -906,6 +986,14 @@ def backup_database(
                 # Supabase CLI normally creates a temporary database login from
                 # SUPABASE_ACCESS_TOKEN. A project-specific DB password is only
                 # an optional fallback for environments where temporary login fails.
+                detail = str(first_error).lower()
+                if connection_mode == "auto" and "ipv6 is not supported" in detail:
+                    pooler_url = _backup_pooler_url(project_ref, access_token, read_token_env_value(password_env))
+                    credential_mode = "session-pooler"
+                    _run_backup_dump(cli, project_ref, access_token, backup_dir / file_name, args, pooler_url=pooler_url)
+                    continue
+                if not any(marker in detail for marker in ("temporary login", "temporary role", "password authentication failed", "28p01", "database_write")):
+                    raise
                 db_password = read_token_env_value(password_env)
                 if not db_password:
                     raise RuntimeError(
@@ -949,6 +1037,7 @@ def backup_database(
             "format": "supabase-multi-backup-v1",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "project": project_name,
+            "account": project.get("account"),
             "project_ref": project_ref,
             "mode": mode,
             "credential_mode": credential_mode,
@@ -1010,6 +1099,10 @@ def list_database_backups(
                 continue
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if manifest.get("project") != project_name or manifest.get("project_ref") != project.get("project_ref"):
+                    continue
+                if manifest.get("account") is not None and manifest.get("account") != project.get("account"):
+                    continue
                 backups.append(
                     {
                         "backup_dir": str(child),
