@@ -787,6 +787,18 @@ def _supabase_cli() -> str:
     return cli
 
 
+def _backup_preflight(cli: str) -> None:
+    help_result = subprocess.run([cli, "db", "dump", "--help"], capture_output=True, text=True, timeout=20)
+    if help_result.returncode or "--remote" not in (help_result.stdout or ""):
+        raise RuntimeError("Backup requires Supabase CLI v3 with --remote support. Update the CLI.")
+    docker = shutil.which("docker")
+    if not docker:
+        raise RuntimeError("Docker CLI not found. Install and start Docker before backing up.")
+    result = subprocess.run([docker, "info", "--format", "{{.ServerVersion}}"], capture_output=True, text=True, timeout=30)
+    if result.returncode or not (result.stdout or "").strip():
+        raise RuntimeError("Docker engine is not ready. Start Docker and retry.")
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -849,6 +861,7 @@ def backup_database(
 
     project_ref, token_env, access_token, password_env, project = _backup_source(project_name)
     cli = _supabase_cli()
+    _backup_preflight(cli)
 
     configured_destination = str(project.get("backup_dir") or "").strip()
     root = (
@@ -1017,6 +1030,8 @@ def list_database_backups(
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 if manifest.get("project") != project_name or manifest.get("project_ref") != project.get("project_ref"):
+                    continue
+                if manifest.get("account") is not None and manifest.get("account") != project.get("account"):
                     continue
                 backups.append(
                     {
