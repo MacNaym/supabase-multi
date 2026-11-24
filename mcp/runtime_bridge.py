@@ -35,6 +35,16 @@ LIVE_CAPABILITIES: dict[str, dict[str, Any]] = {
         "confirmation_required": False,
         "write_capable": False,
     },
+    "validate_database_backup": {
+        "description": "Inspect backup integrity and SQL dump structure without executing SQL.",
+        "confirmation_required": False,
+        "write_capable": False,
+    },
+    "import_database_backup": {
+        "description": "Inspect an external backup in place without copying or executing it.",
+        "confirmation_required": False,
+        "write_capable": False,
+    },
     "list_database_backups": {
         "description": "List local Supabase Multi database backups for one target.",
         "confirmation_required": False,
@@ -280,6 +290,18 @@ def invoke_live_capability(
         if not path:
             raise RuntimeError("verify_database_backup requires arguments.path.")
         return _headless_module().verify_database_backup(path)
+
+    if operation == "validate_database_backup":
+        path = str(arguments.get("path") or "").strip()
+        if not path:
+            raise RuntimeError("validate_database_backup requires arguments.path.")
+        return _headless_module().validate_database_backup(path)
+
+    if operation == "import_database_backup":
+        path = str(arguments.get("path") or "").strip()
+        if not path:
+            raise RuntimeError("import_database_backup requires arguments.path.")
+        return _headless_module().import_database_backup(path)
 
     if operation == "query_sql":
         target = str(arguments.get("target") or "").strip()

@@ -674,7 +674,7 @@ async function validateBackupPath(path){
   $("#backupValidationStatus").textContent=currentLang==="it"?"Verifica in corso…":"Validating…";
   $("#backupValidationDetails").textContent="";
   try{
-    const {result:r}=await api("/api/backup-validate",{path});
+    const {result:r}=await api("/api/backup-import",{path});
     const it=currentLang==="it";
     $("#backupValidationStatus").textContent=r.ok?(it?"Controlli superati — ripristino non collaudato":"Checks passed — restore not tested"):(it?"Validazione non superata":"Validation failed");
     const lines=[

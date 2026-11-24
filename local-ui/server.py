@@ -1423,6 +1423,10 @@ class Handler(SimpleHTTPRequestHandler):
                 backup_path=(body.get("path") or "").strip()
                 result=backup_backend().validate_database_backup(backup_path)
                 self.send_json({"ok":True,"result":result});return
+            if path=="/api/backup-import":
+                backup_path=(body.get("path") or "").strip()
+                result=backup_backend().import_database_backup(backup_path)
+                self.send_json({"ok":True,"result":result});return
             if path=="/api/backup-verify":
                 backup_path=(body.get("path") or "").strip()
                 result=backup_backend().verify_database_backup(backup_path)

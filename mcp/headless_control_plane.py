@@ -1262,6 +1262,21 @@ def validate_database_backup(path: str) -> dict[str, Any]:
     return report
 
 
+def import_database_backup(path: str) -> dict[str, Any]:
+    """Inspect an external backup in place without copying, executing, or registering it.
+
+    Import is intentionally report-only: an external folder remains its owner's
+    responsibility and no dump content, credential, or registry state is saved.
+    The returned validation report is sufficient for a user to select the source
+    for a separately confirmed local restore test.
+    """
+    report = validate_database_backup(path)
+    report["external"] = True
+    report["imported"] = bool(report.get("ok"))
+    report["import_mode"] = "report-only"
+    return report
+
+
 def execute_project_sql(
     project_name: str,
     query: str,

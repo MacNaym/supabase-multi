@@ -463,3 +463,61 @@ def test_validation_does_not_execute_sql(tmp_path,monkeypatch):
     make_validation_fixture(module,tmp_path)
     monkeypatch.setattr(module.subprocess,"run",lambda *a,**kw: pytest.fail("Validation executed a process"))
     assert module.validate_database_backup(str(tmp_path))["ok"]
+
+
+def test_import_external_backup_is_report_only_and_hides_sql(tmp_path):
+    """Removing import validation or returning dump content must break this."""
+    module = load_module()
+    make_validation_fixture(module, tmp_path)
+    (tmp_path / "schema.sql").write_text(
+        "-- PostgreSQL database dump\nCREATE TABLE public.safe_table(id int);\n",
+        encoding="utf-8",
+    )
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    schema = next(item for item in manifest["files"] if item["name"] == "schema.sql")
+    schema.update(bytes=(tmp_path / "schema.sql").stat().st_size, sha256=module._sha256_file(tmp_path / "schema.sql"))
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = module.import_database_backup(str(tmp_path))
+
+    assert report["ok"] is True
+    assert report["imported"] is True
+    assert report["external"] is True
+    assert report["backup_dir"] == str(tmp_path.resolve())
+    assert "CREATE TABLE" not in json.dumps(report)
+    assert set(path.name for path in tmp_path.iterdir()) == {"roles.sql", "schema.sql", "data.sql", "manifest.json"}
+
+
+def test_import_external_backup_rejects_invalid_manifest(tmp_path):
+    """Removing validation from import must never accept an unsafe source."""
+    module = load_module()
+    make_validation_fixture(module, tmp_path)
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    manifest["files"].append(dict(manifest["files"][0]))
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = module.import_database_backup(str(tmp_path))
+
+    assert report["ok"] is False
+    assert report["imported"] is False
+
+
+def test_runtime_bridge_advertises_and_dispatches_safe_backup_inspection(monkeypatch):
+    """Removing a safe inspection operation from the whitelist must break this."""
+    import importlib
+    import sys
+
+    monkeypatch.syspath_prepend(str(ROOT / "mcp"))
+    bridge = importlib.import_module("runtime_bridge")
+    backend = SimpleNamespace(
+        validate_database_backup=lambda path: {"ok": True, "path": path},
+        import_database_backup=lambda path: {"ok": True, "imported": True, "path": path},
+    )
+    monkeypatch.setattr(bridge, "_headless_module", lambda: backend)
+
+    names = {item["operation"] for item in bridge.get_capabilities()["capabilities"]}
+
+    assert {"validate_database_backup", "import_database_backup"} <= names
+    assert bridge.invoke_live_capability("validate_database_backup", {"path": "C:/safe"})["ok"]
+    assert bridge.invoke_live_capability("import_database_backup", {"path": "C:/safe"})["imported"]
+    assert "remote_restore" not in names
