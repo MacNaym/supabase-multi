@@ -83,26 +83,30 @@ List, get, and deploy are proxied to the official project-scoped Supabase MCP. D
 Read operations require the PAT's Edge Functions read permission. Deploy/delete require Edge Functions read-write permission, explicit `confirm=true`, and a Supabase Multi target that is not configured read-only.
 
 
-## Database backup V1 through the live gateway
+## Database backup V1.1 through the live gateway
 
 The live registry exposes:
 
-- `backup_database(target, mode="full", destination?, db_url_env?)`
+- `backup_database(target, mode="full", destination?)`
+- `list_database_backups(target, destination?)`
 - `verify_database_backup(path)`
 
 Backup modes are `schema`, `data`, and `full`. Full mode creates `roles.sql`, `schema.sql`, and `data.sql`, plus a `manifest.json` containing file sizes and SHA-256 hashes.
 
-Backups use the current Supabase CLI `db dump --remote=...` flow. Supabase Multi never stores or returns the database connection string. It resolves the connection-string environment variable in this order:
+Backups use the current Supabase CLI `db dump --remote=<project_ref>` flow. Supabase Multi takes the project ref and the existing project PAT from the registry/environment, then passes the PAT to the CLI through `SUPABASE_ACCESS_TOKEN`. The CLI can create a temporary database login, so a database URL or database password is not normally required.
 
-1. explicit `db_url_env` argument;
-2. project `db_url_env` in `registry.json`;
-3. derived name `SUPABASE_DB_URL_<TARGET>`.
+If temporary-login authentication fails, Supabase Multi optionally retries with a database password. The fallback variable defaults to `SUPABASE_DB_PASSWORD_<TARGET>` or may be overridden by a project's `db_password_env`. Raw PATs and database passwords are never written to the registry, manifest, or MCP response.
 
-For example, `example-prod` defaults to `SUPABASE_DB_URL_EXAMPLE_PROD`.
+The backup destination is resolved in this order:
 
-The default local destination is `~/SupabaseMultiBackups/<target>/<UTC timestamp>/`. Set `SUPABASE_MULTI_BACKUP_DIR` to change the default root, or pass `destination` for one call.
+1. explicit `destination` argument;
+2. project `backup_dir` saved from the local dashboard;
+3. `SUPABASE_MULTI_BACKUP_DIR`;
+4. `~/SupabaseMultiBackups`.
 
-Database backups do not include the actual files stored through Supabase Storage; they cover the logical Postgres database. Storage-object backup is intentionally outside V1.
+The local dashboard has a dedicated **Backup** view with project selection, backup mode, native Windows folder picker, per-project default destination, backup history, SHA-256 verification, and **Open folder**.
+
+Database backups do not include the actual files stored through Supabase Storage; they cover the logical Postgres database. Storage-object backup remains outside V1.1.
 
 `verify_database_backup` recomputes sizes and SHA-256 hashes and reports any missing or modified file.
 
