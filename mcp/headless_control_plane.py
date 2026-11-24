@@ -742,8 +742,7 @@ def _safe_backup_name(value: str) -> str:
 
 def _backup_source(
     project_name: str,
-    db_url_env: str | None = None,
-) -> tuple[str, str, str, dict[str, Any]]:
+) -> tuple[str, str, str, str, dict[str, Any]]:
     project_name = (project_name or "").strip()
     if not project_name:
         raise ValueError("Project target is required.")
@@ -756,26 +755,26 @@ def _backup_source(
         raise ValueError("Project target is disabled.")
 
     project_ref = str(project.get("project_ref") or "").strip()
+    token_env = str(project.get("token_env") or "").strip()
     if not project_ref:
         raise ValueError("Project ref is not configured.")
+    if not token_env:
+        raise ValueError("Project token_env is not configured.")
 
-    derived_env = "SUPABASE_DB_URL_" + re.sub(
-        r"[^A-Za-z0-9]+", "_", project_name.upper()
-    ).strip("_")
-    env_name = (
-        str(db_url_env or "").strip()
-        or str(project.get("db_url_env") or "").strip()
-        or derived_env
+    access_token = read_token_env_value(token_env)
+    if not access_token:
+        raise ValueError(f"No PAT found in environment variable {token_env}.")
+
+    password_env = (
+        str(project.get("db_password_env") or "").strip()
+        or "SUPABASE_DB_PASSWORD_"
+        + re.sub(r"[^A-Za-z0-9]+", "_", project_name.upper()).strip("_")
     )
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_name):
-        raise ValueError("db_url_env must be a valid environment-variable name.")
-    db_url = read_token_env_value(env_name)
-    if not db_url:
-        raise ValueError(
-            f"No database connection string found in environment variable {env_name}."
-        )
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", password_env):
+        raise ValueError("db_password_env must be a valid environment-variable name.")
+    db_password = read_token_env_value(password_env)
 
-    return project_ref, env_name, db_url, project
+    return project_ref, token_env, access_token, password_env, project
 
 
 def _supabase_cli() -> str:
@@ -795,26 +794,41 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _run_backup_dump(cli: str, db_url: str, output: Path, extra_args: list[str]) -> None:
+def _run_backup_dump(
+    cli: str,
+    project_ref: str,
+    access_token: str,
+    output: Path,
+    extra_args: list[str],
+    *,
+    db_password: str = "",
+) -> None:
     command = [
         cli,
         "db",
         "dump",
-        f"--remote={db_url}",
+        f"--remote={project_ref}",
         "-f",
         str(output),
         *extra_args,
     ]
+    if db_password:
+        command.extend(["--password", db_password])
+
+    env = os.environ.copy()
+    env["SUPABASE_ACCESS_TOKEN"] = access_token
     proc = subprocess.run(
         command,
         capture_output=True,
         text=True,
         timeout=3600,
+        env=env,
     )
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "Supabase CLI db dump failed.").strip()
-        # Avoid reflecting a credential-bearing connection string in errors.
-        detail = detail.replace(db_url, "[REDACTED_DB_URL]")
+        detail = detail.replace(access_token, "[REDACTED_ACCESS_TOKEN]")
+        if db_password:
+            detail = detail.replace(db_password, "[REDACTED_DB_PASSWORD]")
         raise RuntimeError(detail)
     if not output.exists():
         raise RuntimeError(f"Supabase CLI reported success but did not create {output.name}.")
@@ -825,19 +839,22 @@ def backup_database(
     *,
     mode: str = "full",
     destination: str | None = None,
-    db_url_env: str | None = None,
 ) -> dict[str, Any]:
     mode = (mode or "full").strip().lower()
     if mode not in {"full", "schema", "data"}:
         raise ValueError("mode must be one of: full, schema, data.")
 
-    project_ref, env_name, db_url, _project = _backup_source(
-        project_name,
-        db_url_env=db_url_env,
-    )
+    project_ref, token_env, access_token, password_env, project = _backup_source(project_name)
     cli = _supabase_cli()
 
-    root = Path(destination).expanduser() if destination else DEFAULT_BACKUP_ROOT
+    configured_destination = str(project.get("backup_dir") or "").strip()
+    root = (
+        Path(destination).expanduser()
+        if destination
+        else Path(configured_destination).expanduser()
+        if configured_destination
+        else DEFAULT_BACKUP_ROOT
+    )
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%fZ")
     backup_dir = root / _safe_backup_name(project_name) / timestamp
     backup_dir.mkdir(parents=True, exist_ok=False)
@@ -862,9 +879,38 @@ def backup_database(
             )
         )
 
+    credential_mode = "temporary-login"
+    db_password = ""
     try:
         for file_name, args in jobs:
-            _run_backup_dump(cli, db_url, backup_dir / file_name, args)
+            try:
+                _run_backup_dump(
+                    cli,
+                    project_ref,
+                    access_token,
+                    backup_dir / file_name,
+                    args,
+                )
+            except RuntimeError as first_error:
+                # Supabase CLI normally creates a temporary database login from
+                # SUPABASE_ACCESS_TOKEN. A project-specific DB password is only
+                # an optional fallback for environments where temporary login fails.
+                if not db_password:
+                    db_password = read_token_env_value(password_env)
+                if not db_password:
+                    raise RuntimeError(
+                        str(first_error)
+                        + f" | No fallback DB password found in {password_env}."
+                    ) from first_error
+                credential_mode = "database-password-fallback"
+                _run_backup_dump(
+                    cli,
+                    project_ref,
+                    access_token,
+                    backup_dir / file_name,
+                    args,
+                    db_password=db_password,
+                )
 
         files = []
         for file_name, _args in jobs:
@@ -895,7 +941,8 @@ def backup_database(
             "project": project_name,
             "project_ref": project_ref,
             "mode": mode,
-            "db_url_env": env_name,
+            "credential_mode": credential_mode,
+            "token_env": token_env,
             "supabase_cli_version": cli_version,
             "files": files,
         }
@@ -914,10 +961,62 @@ def backup_database(
         "mode": mode,
         "backup_dir": str(backup_dir),
         "manifest": str(manifest_path),
-        "db_url_env": env_name,
+        "token_env": token_env,
+        "credential_mode": credential_mode,
         "files": files,
         "verified": True,
         "source": "supabase-cli",
+    }
+
+
+def list_database_backups(
+    project_name: str,
+    *,
+    destination: str | None = None,
+) -> dict[str, Any]:
+    _project_ref, _token_env, _access_token, _password_env, project = _backup_source(project_name)
+    configured_destination = str(project.get("backup_dir") or "").strip()
+    root = (
+        Path(destination).expanduser()
+        if destination
+        else Path(configured_destination).expanduser()
+        if configured_destination
+        else DEFAULT_BACKUP_ROOT
+    )
+    project_dir = root / _safe_backup_name(project_name)
+    backups: list[dict[str, Any]] = []
+    if project_dir.is_dir():
+        for child in sorted(project_dir.iterdir(), reverse=True):
+            manifest_path = child / "manifest.json"
+            if not child.is_dir() or not manifest_path.is_file():
+                continue
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                backups.append(
+                    {
+                        "backup_dir": str(child),
+                        "manifest": str(manifest_path),
+                        "created_at": manifest.get("created_at"),
+                        "mode": manifest.get("mode"),
+                        "files": len(manifest.get("files") or []),
+                    }
+                )
+            except Exception:
+                backups.append(
+                    {
+                        "backup_dir": str(child),
+                        "manifest": str(manifest_path),
+                        "created_at": None,
+                        "mode": "unknown",
+                        "files": 0,
+                        "invalid_manifest": True,
+                    }
+                )
+    return {
+        "project": project_name,
+        "root": str(root),
+        "backups": backups,
+        "count": len(backups),
     }
 
 
