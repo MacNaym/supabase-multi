@@ -9,11 +9,16 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent
 RUNTIME_FILES = (
+    ROOT / "runtime_identity.py",
+    ROOT / "local-ui" / "index.html",
+    ROOT / "local-ui" / "app.js",
     ROOT / "local-ui" / "server.py",
     ROOT / "mcp" / "server.py",
     ROOT / "mcp" / "runtime_bridge.py",
     ROOT / "mcp" / "headless_control_plane.py",
 )
+APP_VERSION = "3.9.1"
+BACKUP_MODULE_VERSION = "1.3-dev"
 STARTED_AT = time.time()
 
 
@@ -53,6 +58,8 @@ RUNTIME_GIT_COMMIT = git_commit()
 def runtime_payload(component: str) -> dict[str, Any]:
     return {
         "app": "supabase-multi",
+        "app_version": APP_VERSION,
+        "backup_module_version": BACKUP_MODULE_VERSION,
         "component": component,
         "pid": os.getpid(),
         "started_at_epoch": STARTED_AT,
