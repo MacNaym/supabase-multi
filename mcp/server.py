@@ -26,7 +26,7 @@ from headless_control_plane import (
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from runtime_identity import runtime_payload, source_fingerprint
+from runtime_identity import APP_VERSION, runtime_payload, source_fingerprint
 
 CONTROL_PLANE = ROOT / "local-ui" / "server.py"
 RUNTIME_BRIDGE = MCP_DIR / "runtime_bridge.py"
@@ -62,7 +62,7 @@ mcp = MCPServer(
         "surface the candidates so the user can confirm the intended account/project. "
         "Never request, print, or return raw PAT values."
     ),
-    version="0.2.0",
+    version=APP_VERSION,
 )
 
 _control_plane_proc: subprocess.Popen | None = None
